@@ -1,0 +1,12 @@
+---
+# agent role (linux)
+- name: copy agent binary
+  copy:
+    src: meshbridge-agent-linux-amd64
+    dest: /usr/local/bin/meshbridge-agent
+    mode: "0755"
+- name: systemd unit
+  copy:
+    src: meshbridge-agent.service
+    dest: /etc/systemd/system/meshbridge-agent@.service
+    mode: "0644"

@@ -1,0 +1,31 @@
+{
+  "groups": {},
+  "tagOwners": {
+    "tag:admin-device": ["autogroup:admin"],
+    "tag:project-alpha": ["autogroup:admin"],
+    "tag:role-dev": ["autogroup:admin"],
+    "tag:role-prod": ["autogroup:admin"],
+    "tag:relay": ["autogroup:admin"],
+    "tag:relay-jp": ["autogroup:admin"]
+  },
+  "hosts": {},
+  "grants": [
+    {
+      "src": ["tag:project-alpha"],
+      "dst": ["tag:project-alpha"],
+      "ip": ["*"]
+    },
+    {
+      "src": ["tag:admin-device"],
+      "dst": ["tag:project-alpha"],
+      "ip": ["tcp:22"]
+    },
+    {
+      "src": ["tag:project-alpha"],
+      "dst": ["tag:relay-jp"],
+      "app": {
+        "tailscale.com/cap/relay": []
+      }
+    }
+  ]
+}

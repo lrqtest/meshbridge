@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MeshBridge</title>
+<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:24px auto;padding:0 16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;font-size:14px}nav a{margin-right:12px}</style>
+</head>
+<body>
+<h1>MeshBridge</h1>
+<p>Control != Data. <span id="health">health: …</span></p>
+<nav><a href="#devices">Devices</a><a href="#transfers">Transfers</a><a href="#relays">Relays</a><a href="#audit">Audit</a></nav>
+<label>API token <input id="token" type="password" size="40" placeholder="MESH_TOKEN"></label>
+<button onclick="load()">Load</button>
+<h2 id="devices">Devices</h2><table id="t-dev"><tr><th>hostname</th><th>ip</th><th>online</th><th>last_seen</th></tr></table>
+<h2 id="transfers">Transfers</h2><table id="t-tr"><tr><th>id</th><th>src→dst</th><th>state</th><th>route</th><th>done/total</th></tr></table>
+<h2 id="relays">Relays</h2><table id="t-relay"><tr><th>name</th><th>region</th><th>healthy</th><th>out/quota</th></tr></table>
+<script>
+const base = location.origin;
+async function api(p){const t=document.getElementById('token').value;const r=await fetch(base+p,{headers:{Authorization:'Bearer '+t}});if(!r.ok)throw new Error(r.status);return r.json();}
+async function load(){try{const h=await fetch(base+'/api/v1/health').then(r=>r.json());document.getElementById('health').textContent='health: '+(h.ok?'ok':'degraded')+' agents='+h.agents_online;}catch(e){document.getElementById('health').textContent='health: unreachable';return;}
+ try{const d=await api('/api/v1/devices?limit=100');const t=document.getElementById('t-dev');d.items.forEach(x=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.hostname}</td><td>${x.tailscale_ip||''}</td><td>${x.online}</td><td>${x.last_seen||''}</td>`;t.appendChild(tr);});}catch(e){}
+ try{const d=await api('/api/v1/transfers?limit=100');const t=document.getElementById('t-tr');d.items.forEach(x=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.id}</td><td>${x.src}→${x.dst}</td><td>${x.state}</td><td>${x.route}</td><td>${x.bytes_done}/${x.bytes_total}</td>`;t.appendChild(tr);});}catch(e){}
+ try{const d=await api('/api/v1/relays');const t=document.getElementById('t-relay');d.items.forEach(x=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.name}</td><td>${x.region}</td><td>${x.healthy}</td><td>${x.bytes_out_month}/${x.quota}</td>`;t.appendChild(tr);});}catch(e){}
+}
+</script>
+</body></html>

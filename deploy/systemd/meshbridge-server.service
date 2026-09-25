@@ -1,0 +1,26 @@
+[Unit]
+Description=MeshBridge Server (Control Plane)
+After=network-online.target headscale.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meshbridge
+Group=meshbridge
+ExecStart=/usr/local/bin/meshbridge-server --data-dir /var/lib/meshbridge
+EnvironmentFile=-/etc/meshbridge/server.env
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/meshbridge
+ConfigurationDirectory=meshbridge
+StateDirectory=meshbridge
+
+[Install]
+WantedBy=multi-user.target

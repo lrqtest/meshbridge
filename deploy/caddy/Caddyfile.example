@@ -1,0 +1,24 @@
+# Caddyfile.example — copy to /etc/caddy/Caddyfile, replace domains.
+# Requires DNS A/AAAA for both domains -> VPS IP first (ACME).
+
+hs.example.com {
+	reverse_proxy 127.0.0.1:8080 {
+		# Headscale needs websockets/upgrade; Caddy handles by default.
+		transport http {
+			versions h1 h2c
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+	}
+}
+
+mesh.example.com {
+	reverse_proxy 127.0.0.1:8081
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+}

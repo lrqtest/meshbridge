@@ -1,0 +1,11 @@
+---
+# relay role: tailscale + peer-relay port + UFW (idempotent)
+- name: allow relay udp
+  ufw:
+    rule: allow
+    port: "40000"
+    proto: udp
+- name: enable peer relay (run after tailscale up)
+  command: tailscale set --relay-server-port=40000
+  changed_when: false
+  failed_when: false

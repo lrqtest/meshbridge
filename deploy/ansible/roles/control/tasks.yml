@@ -1,0 +1,24 @@
+---
+# control role: users, dirs, firewall hint, vnstat (idempotent)
+- name: create meshbridge user
+  user:
+    name: meshbridge
+    system: true
+    home: /var/lib/meshbridge
+    create_home: true
+    shell: /usr/sbin/nologin
+- name: dirs
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: meshbridge
+    group: meshbridge
+    mode: "0700"
+  loop:
+    - /etc/meshbridge
+    - /var/lib/meshbridge
+- name: install vnstat/sqlite
+  apt:
+    name: [vnstat, sqlite3]
+    state: present
+    update_cache: true

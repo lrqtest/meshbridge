@@ -1,0 +1,3 @@
+---
+# headscale role: pinned DEB + config + policy (validate before reload)
+headscale_version: "0.29.4"

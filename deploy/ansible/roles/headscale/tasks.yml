@@ -1,0 +1,13 @@
+---
+# headscale role (pinned DEB, validate before reload)
+- name: download headscale deb
+  get_url:
+    url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_{{ ansible_architecture }}.deb"
+    dest: /tmp/headscale.deb
+    mode: "0644"
+- name: install headscale
+  apt:
+    deb: /tmp/headscale.deb
+- name: config check
+  command: headscale config check
+  changed_when: false

@@ -1,0 +1,12 @@
+---
+# caddy role
+- name: install caddy
+  apt:
+    name: caddy
+    state: present
+- name: deploy Caddyfile
+  copy:
+    src: Caddyfile.example
+    dest: /etc/caddy/Caddyfile
+    mode: "0644"
+  notify: reload caddy

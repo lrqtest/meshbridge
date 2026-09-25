@@ -1,0 +1,11 @@
+---
+- hosts: control
+  become: true
+  roles:
+    - control
+    - headscale
+    - caddy
+- hosts: relay_jp:relay_us
+  become: true
+  roles:
+    - relay
