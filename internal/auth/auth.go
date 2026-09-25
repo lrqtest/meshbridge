@@ -11,7 +11,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/argon2"
@@ -42,11 +44,16 @@ func HashPassword(password string) (string, error) {
 		base64.RawStdEncoding.EncodeToString(hash)), nil
 }
 
-// VerifyPassword parses our own format only.
+// VerifyPassword parses our own format only (params read from the stored
+// string so future parameter changes keep old hashes verifiable).
 func VerifyPassword(encoded, password string) (bool, error) {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false, fmt.Errorf("unsupported hash format")
+	}
+	m, t, p, err := parseArgon2Params(parts[3])
+	if err != nil {
+		return false, err
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
@@ -56,8 +63,56 @@ func VerifyPassword(encoded, password string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	got := argon2.IDKey([]byte(password), salt, timeN, memKB, threads, uint32(len(want)))
+	// Hard cap decoded material to keep a tampered DB row from forcing huge work.
+	if len(want) < 16 || len(want) > 128 || len(salt) < 8 || len(salt) > 64 || m > 4<<20 || t == 0 || t > 8 || p == 0 || p > 16 {
+		return false, fmt.Errorf("implausible hash parameters")
+	}
+	got := argon2.IDKey([]byte(password), salt, t, m, p, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
+}
+
+func parseArgon2Params(s string) (m uint32, t uint32, p uint8, err error) {
+	for _, kv := range strings.Split(s, ",") {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			return 0, 0, 0, fmt.Errorf("bad params %q", s)
+		}
+		n, perr := strconv.ParseUint(v, 10, 32)
+		if perr != nil {
+			return 0, 0, 0, fmt.Errorf("bad param %q", kv)
+		}
+		switch k {
+		case "m":
+			m = uint32(n)
+		case "t":
+			t = uint32(n)
+		case "p":
+			if n > 255 {
+				return 0, 0, 0, fmt.Errorf("bad p")
+			}
+			p = uint8(n)
+		}
+	}
+	if m == 0 || t == 0 || p == 0 {
+		return 0, 0, 0, fmt.Errorf("incomplete params %q", s)
+	}
+	return m, t, p, nil
+}
+
+// DummyHash is a real Argon2id digest of a throwaway password. Verifying
+// against it when the username is unknown keeps login timing uniform so
+// valid usernames cannot be enumerated by response time.
+var dummyHash = func() string {
+	h, err := HashPassword("meshbridge-dummy-verify-target")
+	if err != nil {
+		panic(err)
+	}
+	return h
+}()
+
+// DummyVerify burns the same Argon2 work as a real check. Always fails.
+func DummyVerify(password string) {
+	_, _ = VerifyPassword(dummyHash, password)
 }
 
 // RandomToken returns base64url random bytes (n bytes of entropy).
@@ -136,4 +191,41 @@ func VerifyTransfer(secret []byte, token, jobID, src, dst string, now time.Time)
 		return nil, fmt.Errorf("missing nonce")
 	}
 	return &c, nil
+}
+
+// ReplayGuard remembers consumed nonces until their token expiry passes.
+// VerifyTransfer alone cannot detect re-use: the receiver must consult this
+// (or an equivalent persistent store) before acting on a token.
+type ReplayGuard struct {
+	mu     sync.Mutex
+	seen   map[string]time.Time
+	lastGC time.Time
+}
+
+func NewReplayGuard() *ReplayGuard {
+	return &ReplayGuard{seen: make(map[string]time.Time)}
+}
+
+// CheckAndConsume returns false if nonce was already used. Nonces older than
+// maxTTL are garbage-collected opportunistically.
+func (g *ReplayGuard) CheckAndConsume(nonce string, exp time.Time, maxTTL time.Duration) bool {
+	if nonce == "" {
+		return false
+	}
+	now := time.Now()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if now.Sub(g.lastGC) > time.Minute {
+		for k, t := range g.seen {
+			if now.Sub(t) > maxTTL {
+				delete(g.seen, k)
+			}
+		}
+		g.lastGC = now
+	}
+	if _, dup := g.seen[nonce]; dup {
+		return false
+	}
+	g.seen[nonce] = exp
+	return true
 }

@@ -2,12 +2,8 @@
 # Requires DNS A/AAAA for both domains -> VPS IP first (ACME).
 
 hs.example.com {
-	reverse_proxy 127.0.0.1:8080 {
-		# Headscale needs websockets/upgrade; Caddy handles by default.
-		transport http {
-			versions h1 h2c
-		}
-	}
+	# Plain reverse_proxy per official Headscale recommendation (h2/websocket ok).
+	reverse_proxy 127.0.0.1:8080
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"

@@ -16,10 +16,15 @@
 <script>
 const base = location.origin;
 async function api(p){const t=document.getElementById('token').value;const r=await fetch(base+p,{headers:{Authorization:'Bearer '+t}});if(!r.ok)throw new Error(r.status);return r.json();}
+// addRow uses textContent only: server data (hostname, error, …) is untrusted
+// and must never flow into innerHTML (stored XSS → token theft).
+function addRow(tableId, cells){const t=document.getElementById(tableId);const tr=document.createElement('tr');cells.forEach(c=>{const td=document.createElement('td');td.textContent=c;tr.appendChild(td);});t.appendChild(tr);}
+function clearRows(tableId){const t=document.getElementById(tableId);while(t.rows.length>1)t.deleteRow(-1);}
 async function load(){try{const h=await fetch(base+'/api/v1/health').then(r=>r.json());document.getElementById('health').textContent='health: '+(h.ok?'ok':'degraded')+' agents='+h.agents_online;}catch(e){document.getElementById('health').textContent='health: unreachable';return;}
- try{const d=await api('/api/v1/devices?limit=100');const t=document.getElementById('t-dev');d.items.forEach(x=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.hostname}</td><td>${x.tailscale_ip||''}</td><td>${x.online}</td><td>${x.last_seen||''}</td>`;t.appendChild(tr);});}catch(e){}
- try{const d=await api('/api/v1/transfers?limit=100');const t=document.getElementById('t-tr');d.items.forEach(x=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.id}</td><td>${x.src}→${x.dst}</td><td>${x.state}</td><td>${x.route}</td><td>${x.bytes_done}/${x.bytes_total}</td>`;t.appendChild(tr);});}catch(e){}
- try{const d=await api('/api/v1/relays');const t=document.getElementById('t-relay');d.items.forEach(x=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.name}</td><td>${x.region}</td><td>${x.healthy}</td><td>${x.bytes_out_month}/${x.quota}</td>`;t.appendChild(tr);});}catch(e){}
+ clearRows('t-dev');clearRows('t-tr');clearRows('t-relay');
+ try{const d=await api('/api/v1/devices?limit=100');d.items.forEach(x=>addRow('t-dev',[x.hostname,x.tailscale_ip||'',x.online?'yes':'no',x.last_seen||'']));}catch(e){}
+ try{const d=await api('/api/v1/transfers?limit=100');d.items.forEach(x=>addRow('t-tr',[x.id,x.src+'→'+x.dst,x.state,x.route,x.bytes_done+'/'+x.bytes_total]));}catch(e){}
+ try{const d=await api('/api/v1/relays');d.items.forEach(x=>addRow('t-relay',[x.name,x.region,x.healthy?'yes':'no',x.bytes_out_month+'/'+x.quota]));}catch(e){}
 }
 </script>
 </body></html>

@@ -17,17 +17,33 @@ apt-get install -y curl ca-certificates gnupg ufw vnstat sqlite3
 timedatectl set-ntp true || true
 hostnamectl set-hostname control || true
 
-# SSH hardening (keep current key session alive; do NOT lock yourself out).
-sshd_cfg=/etc/ssh/sshd_config
-grep -q "^PasswordAuthentication no" $sshd_cfg || echo "PasswordAuthentication no" >> $sshd_cfg
-grep -q "^PermitRootLogin" $sshd_cfg || echo "PermitRootLogin prohibit-password" >> $sshd_cfg
-systemctl reload sshd || true
+# SSH hardening via drop-in (first-match wins in sshd: appending to the end of
+# sshd_config loses to earlier directives; sshd_config.d is Included at the top).
+# Validate with sshd -t and only reload if the config parses — never break the
+# current session.
+SSHD_PORT="$(sshd -T 2>/dev/null | awk '$1=="port"{print $2; exit}')"
+[[ -z "$SSHD_PORT" ]] && SSHD_PORT=22
+mkdir -p /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/00-meshbridge-hardening.conf <<EOF
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+MaxAuthTries 4
+EOF
+chmod 644 /etc/ssh/sshd_config.d/00-meshbridge-hardening.conf
+if sshd -t 2>/dev/null; then
+  systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+  echo "sshd hardened (port ${SSHD_PORT} detected, keep-alive: current session)"
+else
+  rm -f /etc/ssh/sshd_config.d/00-meshbridge-hardening.conf
+  echo "WARN: sshd drop-in failed validation; removed, nothing reloaded"
+fi
 
-# Firewall: 22/80/443 only.
+# Firewall: detected SSH port + 80/443 only. Never reset before allowing SSH.
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp
+ufw allow "${SSHD_PORT}"/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable

@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/meshbridge/meshbridge/internal/probe"
@@ -27,6 +28,13 @@ type AgentConfig struct {
 	Token      string // enrollment or API token (never logged)
 	Allowed    []string
 	StateDir   string
+}
+
+const agentVersion = "0.1.0"
+
+var httpClient = &http.Client{
+	Timeout: 15 * time.Second,
+	Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}},
 }
 
 func jitter(d time.Duration) time.Duration {
@@ -53,15 +61,16 @@ func heartbeat(cfg AgentConfig, obs probe.Observation) error {
 		"hostname":          hostname(),
 		"os":                runtime.GOOS,
 		"arch":              runtime.GOARCH,
+		"agent_version":     agentVersion,
 		"tailscale_version": tailscaleVersion(),
+		"tailscale_ip":      tailscaleIP(),
 		"probe":             obs,
 		"time":              time.Now().UTC().Format(time.RFC3339),
 	})
 	req, _ := http.NewRequest("POST", cfg.Controller+"/api/v1/agents/heartbeat", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+cfg.Token)
 	req.Header.Set("Content-Type", "application/json")
-	cl := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}}
-	resp, err := cl.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -71,6 +80,14 @@ func heartbeat(cfg AgentConfig, obs probe.Observation) error {
 		return fmt.Errorf("heartbeat status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func tailscaleIP() string {
+	out, err := exec.Command("tailscale", "ip", "-4").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func hostname() string {

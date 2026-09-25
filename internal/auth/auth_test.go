@@ -44,3 +44,31 @@ func TestTransferToken(t *testing.T) {
 		t.Fatalf("hash must differ")
 	}
 }
+
+func TestReplayGuard(t *testing.T) {
+	g := NewReplayGuard()
+	exp := time.Now().Add(10 * time.Minute)
+	if !g.CheckAndConsume("n1", exp, time.Hour) {
+		t.Fatal("first use must pass")
+	}
+	if g.CheckAndConsume("n1", exp, time.Hour) {
+		t.Fatal("replay must be rejected")
+	}
+	if g.CheckAndConsume("", exp, time.Hour) {
+		t.Fatal("empty nonce must be rejected")
+	}
+}
+
+func TestVerifyPasswordRejectsImplausibleParams(t *testing.T) {
+	// tampered / malformed hashes must error, not panic or accept
+	for _, bad := range []string{
+		"$argon2id$v=19$m=1,t=0,p=0$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA",
+		"$argon2id$v=19$m=999999999,t=99,p=99$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA",
+		"$bcrypt$v=1$x$y",
+	} {
+		if _, err := VerifyPassword(bad, "x"); err == nil {
+			t.Fatalf("expected error for %q", bad)
+		}
+	}
+	DummyVerify("x") // must not panic
+}

@@ -201,7 +201,7 @@ func Finalize(partPath, dstPath, wantFinal string, overwrite bool) error {
 	if _, err := os.Stat(dstPath); err == nil && !overwrite {
 		return fmt.Errorf("destination exists (refusing silent overwrite): %s", dstPath)
 	}
-	f, err := os.Open(partPath)
+	f, err := os.OpenFile(partPath, os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
@@ -223,8 +223,16 @@ func Finalize(partPath, dstPath, wantFinal string, overwrite bool) error {
 	if got := hex.EncodeToString(h.Sum(nil)); got != wantFinal {
 		return fmt.Errorf("final hash mismatch")
 	}
+	// Durability before visibility: fsync data, rename, fsync directory.
+	if err := f.Sync(); err != nil {
+		return err
+	}
 	if err := os.Rename(partPath, dstPath); err != nil {
 		return err
+	}
+	if dir, err := os.Open(filepath.Dir(dstPath)); err == nil {
+		_ = dir.Sync()
+		dir.Close()
 	}
 	return nil
 }
@@ -263,15 +271,13 @@ func SafeJoin(allowedRoots []string, rel string) (string, error) {
 			realRoot = absRoot
 		}
 		cand := filepath.Join(realRoot, clean)
-		// If parent chain contains symlink escaping root, EvalSymlinks of parent will reveal.
-		parent := cand
-		// walk up until root, eval each existing prefix
+		// Walk up from cand to root; the first existing ancestor must resolve
+		// (EvalSymlinks) back inside realRoot, which catches symlink escapes.
 		p := cand
 		for {
 			if _, err := os.Lstat(p); err == nil {
 				rp, err := filepath.EvalSymlinks(p)
 				if err == nil {
-					// resulting real path must stay within realRoot (or be the file itself under it)
 					rel2, err := filepath.Rel(realRoot, rp)
 					if err != nil || rel2 == ".." || strings.HasPrefix(rel2, "../") {
 						return "", fmt.Errorf("symlink escape refused")
@@ -284,7 +290,6 @@ func SafeJoin(allowedRoots []string, rel string) (string, error) {
 				break
 			}
 			p = np
-			_ = parent
 		}
 		// final containment: cand must be within realRoot lexically (after clean, no ..)
 		if rel3, err := filepath.Rel(realRoot, cand); err == nil && rel3 != ".." && !strings.HasPrefix(rel3, "../") {
