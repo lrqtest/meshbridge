@@ -5,15 +5,12 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
-	"embed"
-	"flag"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -149,34 +146,6 @@ func atoiOr(s string, def int) int {
 		return n
 	}
 	return def
-}
-
-//go:embed all:web
-var webFS embed.FS
-
-func webHandler() http.Handler {
-	sub, err := fs.Sub(webFS, "web")
-	if err != nil {
-		log.Fatalf("embed web: %v", err)
-	}
-	fileServer := http.FileServer(http.FS(sub))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := strings.TrimPrefix(r.URL.Path, "/")
-		if p == "" {
-			p = "index.html"
-		}
-		if _, err := fs.Stat(sub, p); err != nil {
-			// SPA route → serve the shell
-			r2 := new(http.Request)
-			*r2 = *r
-			r2.URL = new(url.URL)
-			*r2.URL = *r.URL
-			r2.URL.Path = "/"
-			fileServer.ServeHTTP(w, r2)
-			return
-		}
-		fileServer.ServeHTTP(w, r)
-	})
 }
 
 // runCreateAdmin reads the password from a TTY (twice, no echo) or stdin pipe

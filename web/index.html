@@ -1,1021 +1,609 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="dark light">
-<meta name="description" content="MeshBridge — 私有设备组网与大文件传输编排。设备间 WireGuard 加密直连，大文件不经过第三方，断点续传、逐块校验。">
-<title>MeshBridge · 私有设备组网与大文件传输</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235b9dff'/%3E%3Cstop offset='1' stop-color='%238a63ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ccircle cx='9' cy='22' r='3' fill='%23fff'/%3E%3Ccircle cx='23' cy='22' r='3' fill='%23fff'/%3E%3Ccircle cx='16' cy='9' r='3' fill='%23fff'/%3E%3Cpath d='M9 22L16 9l7 13M9 22h14' stroke='%23fff' stroke-width='1.8' fill='none' opacity='.85'/%3E%3C/svg%3E">
-<style>
-/* ================= design tokens ================= */
-:root{
-  --bg:#07080b; --bg2:#0b0d12;
-  --panel:rgba(255,255,255,.028); --panel2:rgba(255,255,255,.05);
-  --border:rgba(255,255,255,.09); --border2:rgba(255,255,255,.16);
-  --text:#eceef2; --muted:#a3aab5; --faint:#6d7480;
-  --accent:#5b9dff; --accent2:#8a63ff; --cyan:#2dd4e8;
-  --grad:linear-gradient(100deg,#5b9dff 0%,#8a63ff 55%,#2dd4e8 110%);
-  --ok:#34d399; --warn:#f0b454; --err:#f26d6d;
-  --glow:0 0 44px rgba(91,157,255,.24);
-  --r:16px; --r-s:10px;
-  --ease:cubic-bezier(.22,.7,.3,1);
-}
-@media (prefers-color-scheme: light){ :root{
-  --bg:#f5f7fb; --bg2:#eef1f7;
-  --panel:rgba(255,255,255,.75); --panel2:rgba(20,40,90,.05);
-  --border:rgba(15,30,70,.10); --border2:rgba(15,30,70,.2);
-  --text:#141824; --muted:#525c6e; --faint:#8b94a6;
-  --glow:0 8px 40px rgba(70,110,220,.18);
-}}
-*{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{
-  font:15.5px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
-  background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
-}
-::selection{background:rgba(91,157,255,.35)}
-a{color:inherit;text-decoration:none}
-.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
-
-/* ================= ambient background ================= */
-.bgfx{position:fixed;inset:0;z-index:-1;overflow:hidden;background:var(--bg)}
-.bgfx .orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 26s var(--ease) infinite alternate}
-.orb.o1{width:620px;height:620px;left:-160px;top:-180px;background:radial-gradient(circle,rgba(91,157,255,.34),transparent 65%)}
-.orb.o2{width:520px;height:520px;right:-140px;top:12%;background:radial-gradient(circle,rgba(138,99,255,.30),transparent 65%);animation-delay:-9s}
-.orb.o3{width:460px;height:460px;left:34%;bottom:-220px;background:radial-gradient(circle,rgba(45,212,232,.22),transparent 65%);animation-delay:-17s}
-@keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(70px,44px) scale(1.12)}}
-.bgfx .grid{position:absolute;inset:0;
-  background-image:linear-gradient(rgba(140,160,200,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(140,160,200,.05) 1px,transparent 1px);
-  background-size:44px 44px;
-  mask-image:radial-gradient(ellipse 90% 62% at 50% 0%,#000 35%,transparent 78%);
-  -webkit-mask-image:radial-gradient(ellipse 90% 62% at 50% 0%,#000 35%,transparent 78%);
-}
-
-/* ================= shared bits ================= */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
-  background:var(--grad);color:#fff;border:none;border-radius:12px;
-  padding:13px 26px;font-size:15px;font-weight:650;cursor:pointer;letter-spacing:.2px;
-  box-shadow:0 4px 24px rgba(100,120,255,.35),inset 0 1px 0 rgba(255,255,255,.22);
-  transition:transform .15s var(--ease), box-shadow .2s, filter .2s}
-.btn:hover{transform:translateY(-1px);box-shadow:0 8px 34px rgba(100,120,255,.45);filter:brightness(1.06)}
-.btn:active{transform:translateY(1px)}
-.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
-.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border2);box-shadow:none}
-.btn.ghost:hover{border-color:var(--accent);color:var(--accent);box-shadow:none}
-.btn.slim{padding:9px 18px;font-size:13.5px;border-radius:10px}
-.glass{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-.grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.field{margin:14px 0}
-label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:550}
-input,select{width:100%;background:rgba(0,0,0,.24);color:var(--text);border:1px solid var(--border);
-  border-radius:var(--r-s);padding:11px 13px;font-size:14.5px;outline:none;
-  transition:border .18s, box-shadow .18s, background .18s}
-@media (prefers-color-scheme: light){ input,select{background:rgba(255,255,255,.85)} }
-input:focus{border-color:var(--accent);box-shadow:0 0 0 3.5px rgba(91,157,255,.16)}
-input::placeholder{color:var(--faint)}
-.row{display:flex;gap:10px}.row>*{flex:1}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
-.banner{display:none;border:1px solid var(--border);border-left:3px solid var(--err);
-  background:var(--panel2);border-radius:var(--r-s);padding:10px 13px;font-size:13.5px;margin:12px 0}
-.banner.ok{border-left-color:var(--ok)} .banner.warn{border-left-color:var(--warn)}
-.banner.show{display:block}
-.hint{color:var(--faint);font-size:12.5px;margin-top:5px}
-
-/* toasts */
-#toasts{position:fixed;top:18px;right:18px;z-index:99;display:flex;flex-direction:column;gap:8px}
-.toast{background:rgba(16,19,26,.92);border:1px solid var(--border);border-radius:12px;
-  box-shadow:0 10px 40px rgba(0,0,0,.5);padding:12px 16px;font-size:13.5px;max-width:340px;
-  color:#eceef2;animation:tin .3s var(--ease);backdrop-filter:blur(12px)}
-.toast.ok{border-left:3px solid var(--ok)} .toast.err{border-left:3px solid var(--err)}
-@keyframes tin{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
-
-/* ================= landing ================= */
-#v-landing{display:none}
-.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
-nav.top{position:fixed;top:0;left:0;right:0;z-index:40;transition:background .25s,border .25s;
-  border-bottom:1px solid transparent}
-nav.top.scrolled{background:color-mix(in srgb,var(--bg) 78%,transparent);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom-color:var(--border)}
-nav.top .in{max-width:1120px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:26px}
-.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.2px}
-.logo svg{display:block}
-nav.top .links{display:flex;gap:22px;font-size:14px;color:var(--muted);margin-left:6px}
-nav.top .links a{cursor:pointer}
-nav.top .links a:hover{color:var(--text)}
-nav.top .sp{flex:1}
-nav.top .auth{display:flex;gap:10px;align-items:center}
-nav.top .auth .login-link{color:var(--muted);font-size:14px;padding:8px 12px;border-radius:9px;cursor:pointer}
-nav.top .auth .login-link:hover{color:var(--text);background:var(--panel2)}
-
-/* hero */
-.hero{position:relative;padding:172px 0 96px;text-align:center}
-.hero .pill{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
-  border:1px solid var(--border);border-radius:999px;padding:7px 16px;margin-bottom:26px;
-  background:var(--panel);backdrop-filter:blur(8px)}
-.hero .pill .dotp{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);
-  animation:pulse 2.2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.hero h1{font-size:clamp(38px,6.4vw,68px);line-height:1.12;font-weight:800;letter-spacing:-.02em;max-width:880px;margin:0 auto}
-.hero .sub{font-size:clamp(15.5px,2vw,18.5px);color:var(--muted);max-width:660px;margin:26px auto 0;line-height:1.75}
-.hero .sub b{color:var(--text);font-weight:600}
-.hero .cta{display:flex;gap:14px;justify-content:center;margin-top:38px;flex-wrap:wrap}
-.hero .cta .btn{padding:15px 34px;font-size:16px;border-radius:14px}
-.hero .note{margin-top:18px;font-size:13px;color:var(--faint)}
-
-/* hero network diagram */
-.net{max-width:900px;margin:74px auto 0;position:relative}
-.net svg{width:100%;height:auto;display:block}
-
-/* marquee stats */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:980px;margin:0 auto;padding:10px 0 0}
-.stat{padding:22px 10px;text-align:center;border-radius:var(--r)}
-.stat .n{font-size:clamp(22px,3vw,30px);font-weight:800;background:var(--grad);
-  -webkit-background-clip:text;background-clip:text;color:transparent}
-.stat .t{font-size:13px;color:var(--muted);margin-top:5px}
-@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
-
-/* sections */
-section.sec{padding:110px 0 20px}
-.sec-head{text-align:center;max-width:680px;margin:0 auto 54px}
-.sec-head .kick{font-size:13px;font-weight:700;letter-spacing:.22em;color:var(--accent)}
-.sec-head h2{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:-.015em;margin:12px 0 14px}
-.sec-head p{color:var(--muted);font-size:16px;line-height:1.8}
-
-.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-@media(max-width:900px){.cards3{grid-template-columns:1fr}}
-.cardx{padding:30px 28px;border-radius:var(--r);position:relative;overflow:hidden;
-  transition:transform .3s var(--ease), border .3s}
-.cardx:hover{transform:translateY(-4px);border-color:var(--border2)}
-.cardx .ic{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(135deg,rgba(91,157,255,.16),rgba(138,99,255,.16));
-  border:1px solid rgba(91,157,255,.25);margin-bottom:20px}
-.cardx h3{font-size:17.5px;font-weight:700;margin-bottom:10px}
-.cardx p{font-size:14.5px;color:var(--muted);line-height:1.8}
-.cardx .tagline{margin-top:16px;font-size:12.5px;color:var(--accent)}
-
-/* route / architecture visual */
-.arch{max-width:920px;margin:0 auto;border-radius:20px;padding:34px 30px}
-.route-row{display:flex;align-items:center;gap:0;margin:18px 0}
-.route-row .node{flex:none;text-align:center;width:150px}
-.route-row .node .b{padding:12px 10px;border-radius:12px;border:1px solid var(--border);
-  background:var(--panel2);font-size:13.5px;font-weight:650}
-.route-row .node .s{font-size:11.5px;color:var(--faint);margin-top:5px}
-.route-row .flow{flex:1;height:2px;position:relative;background:linear-gradient(90deg,rgba(91,157,255,.5),rgba(138,99,255,.15));
-  margin:0 4px;min-width:40px;border-radius:2px}
-.route-row .flow::after{content:"";position:absolute;right:-1px;top:-3.5px;border:5px solid transparent;border-left-color:rgba(91,157,255,.75)}
-.route-row .pct{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:11.5px;color:var(--faint);white-space:nowrap}
-.route-row.dead .flow{background:repeating-linear-gradient(90deg,rgba(242,109,109,.5) 0 6px,transparent 6px 12px)}
-.route-row.dead .flow::after{border-left-color:rgba(242,109,109,.6)}
-@media(max-width:720px){
-  .route-row{flex-direction:column;gap:8px}
-  .route-row .flow{width:2px;height:26px;background:linear-gradient(180deg,rgba(91,157,255,.5),rgba(138,99,255,.15))!important}
-  .route-row .flow::after{right:auto;left:-4px;top:auto;bottom:-1px;border:5px solid transparent;border-top-color:rgba(91,157,255,.75)}
-}
-
-/* steps */
-.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-@media(max-width:900px){.steps3{grid-template-columns:1fr}}
-.step{padding:28px;border-radius:var(--r)}
-.step .num{width:34px;height:34px;border-radius:10px;background:var(--grad);color:#fff;font-weight:800;
-  display:flex;align-items:center;justify-content:center;font-size:15px;margin-bottom:18px}
-.step h3{font-size:16.5px;margin-bottom:8px}
-.step p{font-size:14px;color:var(--muted);line-height:1.75}
-
-/* final cta */
-.finale{text-align:center;padding:110px 0 60px}
-.finale h2{font-size:clamp(30px,4.6vw,46px);font-weight:800;letter-spacing:-.015em}
-.finale p{color:var(--muted);margin:16px 0 34px;font-size:16px}
-footer{border-top:1px solid var(--border);padding:34px 0 44px;color:var(--faint);font-size:13px}
-footer .in{max-width:1120px;margin:0 auto;padding:0 24px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
-footer .sp{flex:1}
-
-/* reveal on scroll */
-.rv{opacity:0;transform:translateY(26px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
-.rv.vis{opacity:1;transform:none}
-
-/* ================= auth / wizard ================= */
-.center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:110px 16px 60px}
-.card{width:100%;max-width:430px;padding:34px;box-shadow:var(--glow)}
-.card.wide{max-width:580px}
-.brand{display:flex;align-items:center;gap:11px;margin-bottom:8px}
-.brand h1{font-size:19px;font-weight:750;letter-spacing:.2px}
-.sub{color:var(--muted);font-size:14px;margin-bottom:24px}
-h2.pt{font-size:17px;font-weight:700;margin-bottom:4px}
-.footnote{text-align:center;color:var(--muted);font-size:13.5px;margin-top:20px}
-.footnote a{color:var(--accent);cursor:pointer}
-.back-home{position:fixed;top:22px;left:24px;z-index:30;display:inline-flex;align-items:center;gap:8px;
-  color:var(--muted);font-size:13.5px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);
-  background:var(--panel);backdrop-filter:blur(10px);cursor:pointer;transition:color .2s,border .2s}
-.back-home:hover{color:var(--text);border-color:var(--border2)}
-.steps{display:flex;gap:8px;margin:0 0 24px}
-.steps span{height:4px;flex:1;border-radius:2px;background:var(--border)}
-.steps span.on{background:var(--grad)}
-.cmd{position:relative;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:var(--r-s);
-  padding:13px 46px 13px 15px;overflow-x:auto;white-space:pre;
-  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--text)}
-@media (prefers-color-scheme: light){ .cmd{background:rgba(10,20,45,.04)} }
-.copy{position:absolute;top:9px;right:9px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);
-  border-radius:7px;font-size:11.5px;padding:3px 9px;cursor:pointer}
-.copy:hover{color:var(--accent);border-color:var(--accent)}
-.secret{color:var(--warn)}
-.check{display:flex;align-items:center;gap:9px;font-size:14px;cursor:pointer}
-.check input{width:auto}
-
-/* ================= app shell ================= */
-#app{display:none;min-height:100vh}
-.topbar{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 80%,transparent);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
-.topbar-in{max-width:1080px;margin:0 auto;padding:0 20px;height:60px;display:flex;align-items:center;gap:20px}
-.topbar .logo{font-size:16px}
-.nav{display:flex;gap:4px;margin-left:8px}
-.nav button{background:none;border:none;color:var(--muted);font-size:14px;padding:8px 13px;border-radius:9px;cursor:pointer;font-weight:550}
-.nav button:hover{color:var(--text);background:var(--panel2)}
-.nav button.on{color:var(--accent);background:rgba(91,157,255,.13)}
-.spacer{flex:1}
-.who{color:var(--muted);font-size:13.5px}
-.wrapx{max-width:1080px;margin:0 auto;padding:30px 20px 70px}
-.pagehead{display:flex;align-items:center;gap:12px;margin-bottom:18px}
-.pagehead h2{font-size:21px;font-weight:750}
-.pane{display:none}.pane.on{display:block}
-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);
-  border-radius:var(--r);overflow:hidden;backdrop-filter:blur(12px)}
-th,td{padding:12px 15px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--border)}
-th{color:var(--muted);font-weight:650;background:var(--panel2);font-size:12.5px;letter-spacing:.3px}
-tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:var(--panel2)}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:var(--faint)}
-.dot.on{background:var(--ok);box-shadow:0 0 9px rgba(52,211,153,.7)}
-.modal-mask{position:fixed;inset:0;background:rgba(2,4,10,.62);display:none;align-items:center;justify-content:center;
-  padding:20px;z-index:50;backdrop-filter:blur(6px)}
-.modal-mask.show{display:flex}
-.modal{background:color-mix(in srgb,var(--bg) 88%,#fff 4%);border:1px solid var(--border);border-radius:var(--r);
-  box-shadow:0 24px 80px rgba(0,0,0,.5);width:100%;max-width:580px;padding:28px;max-height:90vh;overflow:auto}
-.modal h3{font-size:17px;margin-bottom:6px}
-@media(max-width:640px){.grid2{grid-template-columns:1fr}.nav{display:none}}
-.kv{color:var(--muted);font-size:13px}
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f3f0e8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121410" media="(prefers-color-scheme: dark)">
+<title>MeshBridge</title>
+<meta name="description" content="MeshBridge joins your devices into a private WireGuard mesh and moves large files directly between them.">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/assets/fonts/inter-normal-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/fraunces-normal-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/fonts/fonts.css">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/boot.js"></script>
+<script src="/assets/app.js" defer></script>
 </head>
 <body>
-<div class="bgfx"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div><div class="grid"></div></div>
-<div id="toasts"></div>
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-mark" viewBox="0 0 32 32"><rect class="m-bg" width="32" height="32" rx="9"/><path class="m-base" d="M8 22h16"/><path class="m-fg" d="M8 22C9.6 14.2 13 11.2 16 11.2S22.4 14.2 24 22"/><circle class="m-dot" cx="8" cy="22" r="2.7"/><circle class="m-dot" cx="24" cy="22" r="2.7"/><circle class="m-dot" cx="16" cy="11.2" r="2.7"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-ur" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.4 2.6 3.7 5.6 3.7 9s-1.3 6.4-3.7 9c-2.4-2.6-3.7-5.6-3.7-9S9.6 5.6 12 3z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.8v2M12 19.2v2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M2.8 12h2M19.2 12h2M5.5 18.5l1.4-1.4M17.1 6.9l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h11"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3.5 3.5l17 17M10.6 5.6A9.8 9.8 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.9 3.7M6.3 6.9A16.4 16.4 0 0 0 2.5 12S6 18.5 12 18.5a9.5 9.5 0 0 0 4.2-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9.5 20H6.5A2.5 2.5 0 0 1 4 17.5v-11A2.5 2.5 0 0 1 6.5 4h3M16 16.5l4.5-4.5L16 7.5M20.5 12H10"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7.5 8 5.5 8-5.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5.6c0 4.3 2.9 8.1 7 9.4 4.1-1.3 7-5.1 7-9.4V6l-7-3z"/><path d="m9 12 2.2 2.2L15.5 10"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15.5" r="3.8"/><path d="m10.8 12.7 8.7-8.7M16.5 7l2.5 2.5M14.3 9.2l2 2"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="m7.5 9.5 3 2.5-3 2.5M13 15h4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4.4a2 2 0 0 1 3.4 0l7.6 13.2a2 2 0 0 1-1.7 3H4.4a2 2 0 0 1-1.7-3l7.6-13.2z"/><path d="M12 9.5v4.2M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.2M12 7.8h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4.5V9h-4.5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8.5 20h7M12 16v4"/></symbol>
+  <symbol id="i-transfer" viewBox="0 0 24 24"><path d="M4 8h14.5L15 4.5M20 16H5.5L9 19.5"/></symbol>
+  <symbol id="i-relay" viewBox="0 0 24 24"><circle cx="12" cy="9.5" r="1.8"/><path d="M8.6 12.9a4.8 4.8 0 0 1 0-6.8M15.4 6.1a4.8 4.8 0 0 1 0 6.8M5.8 15.7a8.8 8.8 0 0 1 0-12.4M18.2 3.3a8.8 8.8 0 0 1 0 12.4M12 11.3V21"/></symbol>
+  <symbol id="i-audit" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h7M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17.5 7H20M4 17h3.5M11.5 17H20"/><circle cx="15.5" cy="7" r="2.2"/><circle cx="9.5" cy="17" r="2.2"/></symbol>
+  <symbol id="i-mesh" viewBox="0 0 24 24"><circle cx="6" cy="6.5" r="2.2"/><circle cx="18" cy="6.5" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M8.2 6.5h7.6M7.1 8.5l3.8 7.6M16.9 8.5l-3.8 7.6"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3.2 20 7.6v8.8l-8 4.4-8-4.4V7.6l8-4.4z"/><path d="M4.3 7.8 12 12l7.7-4.2M12 12v8.6"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18.5" r="2.2"/><circle cx="18" cy="5.5" r="2.2"/><path d="M8.2 18.5H16a3.4 3.4 0 0 0 0-6.8H8a3.4 3.4 0 0 1 0-6.8h7.8"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5h4"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.3-1 4.6 4.6 0 0 1-.3 10H7z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.6l2 2.2H18a2.5 2.5 0 0 1 2.5 2.5v7.8A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-10z"/></symbol>
+</svg>
+<div class="grain" aria-hidden="true"></div>
+<div class="splash" aria-hidden="true"><svg class="mark"><use href="#i-mark"/></svg></div>
+<a class="skip" href="#main" data-skip data-i18n="common.skipToContent">Skip to content</a>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
-<!-- ================= LANDING ================= -->
-<div id="v-landing">
-  <nav class="top" id="landnav"><div class="in">
-    <a class="logo" href="#/">
-      <svg width="26" height="26" viewBox="0 0 32 32"><defs><linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b9dff"/><stop offset="1" stop-color="#8a63ff"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg>
-      MeshBridge
-    </a>
-    <div class="links"><a href="#what">它是什么</a><a href="#features">核心能力</a><a href="#arch">传输架构</a><a href="#how">三步上手</a></div>
-    <div class="sp"></div>
-    <div class="auth">
-      <a class="login-link" id="nl-login">登录</a>
-      <button class="btn slim" id="nl-register">免费注册</button>
-    </div>
-  </div></nav>
-
-  <header class="hero wrap">
-    <div class="pill"><span class="dotp"></span>CONTROL ≠ DATA · 控制面绝不承载你的文件流量</div>
-    <h1>你的设备连成一张网，<br><span class="grad-text">大文件直达，不过手。</span></h1>
-    <p class="sub">MeshBridge 把你散落在家庭、公司、云上的设备组成一张 <b>WireGuard 加密的私有 Mesh 网络</b>，设备之间<b>点对点直传大文件</b>——速度取决于线路本身，而不是某个中转服务器的限速。</p>
-    <div class="cta">
-      <button class="btn" id="hero-register">免费注册，接入设备</button>
-      <button class="btn ghost" id="hero-login">登录控制台</button>
-    </div>
-    <p class="note">注册需邮箱验证码 · 自托管控制面 · 文件数据不经过第三方</p>
-
-    <div class="net">
-      <svg viewBox="0 0 900 380" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="网络拓扑示意">
-        <defs>
-          <linearGradient id="lg2" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#5b9dff"/><stop offset="1" stop-color="#8a63ff"/>
-          </linearGradient>
-        </defs>
-        <line x1="150" y1="300" x2="450" y2="120" stroke="url(#lg2)" stroke-width="2" opacity=".7"/>
-        <line x1="750" y1="300" x2="450" y2="120" stroke="url(#lg2)" stroke-width="2" opacity=".7"/>
-        <line x1="150" y1="300" x2="750" y2="300" stroke="url(#lg2)" stroke-width="3.2" opacity=".95"/>
-        <path d="M450 330 L450 168" stroke="#6d7480" stroke-width="1.6" stroke-dasharray="5 7" opacity=".8"/>
-        <path d="M140 88 L418 108" stroke="#6d7480" stroke-width="1.2" stroke-dasharray="4 7" opacity=".5"/>
-        <circle r="4.5" fill="#5b9dff"><animateMotion dur="2.6s" repeatCount="indefinite" path="M150,300 L750,300"/></circle>
-        <circle r="4.5" fill="#8a63ff"><animateMotion dur="3.4s" begin="1.2s" repeatCount="indefinite" path="M750,300 L150,300"/></circle>
-        <circle r="3.5" fill="#2dd4e8"><animateMotion dur="3.8s" begin=".5s" repeatCount="indefinite" path="M150,300 L450,120 L750,300"/></circle>
-        <circle r="3" fill="#8b94a6"><animateMotion dur="4.5s" repeatCount="indefinite" path="M450,330 L450,168"/></circle>
-        <g font-family="system-ui" text-anchor="middle">
-          <circle cx="150" cy="300" r="34" fill="rgba(91,157,255,.10)" stroke="#5b9dff" stroke-width="1.6"/>
-          <text x="150" y="297" fill="#eceef2" font-size="16">🖥️</text>
-          <text x="150" y="345" fill="#a3aab5" font-size="12">家里 NAS</text>
-          <circle cx="750" cy="300" r="34" fill="rgba(138,99,255,.10)" stroke="#8a63ff" stroke-width="1.6"/>
-          <text x="750" y="297" fill="#eceef2" font-size="16">💻</text>
-          <text x="750" y="345" fill="#a3aab5" font-size="12">海外工作站</text>
-          <circle cx="450" cy="120" r="34" fill="rgba(45,212,232,.08)" stroke="#2dd4e8" stroke-width="1.6"/>
-          <text x="450" y="117" fill="#eceef2" font-size="16">🎮</text>
-          <text x="450" y="165" fill="#a3aab5" font-size="12">笔记本</text>
-          <circle cx="450" cy="352" r="26" fill="rgba(140,160,200,.08)" stroke="#6d7480" stroke-width="1.4" stroke-dasharray="4 4"/>
-          <text x="450" y="349" fill="#a3aab5" font-size="11.5">控制面</text>
-          <text x="450" y="363" fill="#6d7480" font-size="9.5">仅信令 · KB 级</text>
-          <rect x="60" y="66" width="160" height="42" rx="10" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.12)"/>
-          <text x="140" y="84" fill="#a3aab5" font-size="11.5">Headscale 控制器</text>
-          <text x="140" y="99" fill="#6d7480" font-size="9.5">自建 · 密钥分发</text>
-        </g>
-      </svg>
-    </div>
-
-    <div class="stats rv">
-      <div class="stat glass"><div class="n">P2P 直连</div><div class="t">设备间 WireGuard 加密</div></div>
-      <div class="stat glass"><div class="n">64 MiB</div><div class="t">分块 + 断点续传</div></div>
-      <div class="stat glass"><div class="n">BLAKE3</div><div class="t">逐块与整体双重校验</div></div>
-      <div class="stat glass"><div class="n">≈ 0</div><div class="t">控制面承载的文件流量</div></div>
+<!-- ═════════════════════════ LANDING ═════════════════════════ -->
+<div class="view" id="view-landing" hidden>
+  <header class="site-nav" id="site-nav">
+    <div class="wrap nav-in">
+      <a class="brand" href="#/" aria-label="MeshBridge"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#what" data-scroll="what" data-i18n="nav.what"></a>
+        <a href="#principle" data-scroll="principle" data-i18n="nav.principle"></a>
+        <a href="#how" data-scroll="how" data-i18n="nav.how"></a>
+      </nav>
+      <div class="nav-tools">
+        <div class="lang-picker" data-lang-picker></div>
+        <button class="icon-btn theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:common.toggleTheme;title:common.toggleTheme"><svg class="icon i-sun"><use href="#i-sun"/></svg><svg class="icon i-moon"><use href="#i-moon"/></svg></button>
+        <a class="btn btn-quiet btn-sm" href="#/login" data-i18n="common.signIn"></a>
+        <a class="btn btn-primary btn-sm" href="#/register" data-cta="register" data-i18n="common.getStarted"></a>
+      </div>
     </div>
   </header>
 
-  <section class="sec wrap" id="what">
-    <div class="sec-head rv">
-      <div class="kick">它是什么</div>
-      <h2>一台自建服务器，替你管好<span class="grad-text">设备组网与传输</span></h2>
-      <p>家里 NAS 要把 200 GB 素材发给海外的工作站；公司服务器要把数据集同步到云上——网盘又慢又限速还不放心。MeshBridge 在你自己的 VPS 上搭一个轻量控制面，把你的设备组成一张私有网络，传输永远走设备之间。</p>
-    </div>
-    <div class="cards3">
-      <div class="cardx glass rv">
-        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5b9dff" stroke-width="1.8"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="6" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><circle cx="12" cy="12" r="2.2"/><path d="M6.8 7.4l3.4 3.2M17.2 7.4l-3.4 3.2M6.8 16.6l3.4-3.2M17.2 16.6l-3.4-3.2"/></svg></div>
-        <h3>私有 Mesh 组网</h3>
-        <p>基于 Headscale + Tailscale 的自建控制面：设备装上 Agent 自动入网，拿到的 100.x 地址只在你的网络里可见。准入、密钥、拓扑全部由你掌控。</p>
-        <div class="tagline">WireGuard 加密 · 无第三方</div>
+  <main id="main">
+    <section class="hero wrap">
+      <p class="eyebrow reveal"><span class="pulse"></span><span data-i18n="hero.eyebrow"></span></p>
+      <h1 class="display hero-title reveal"><span data-i18n="hero.title"></span> <em data-i18n="hero.titleEm"></em></h1>
+      <p class="lede reveal" data-i18n="hero.lede"></p>
+      <div class="cta-row reveal">
+        <a class="btn btn-primary btn-lg" href="#/register" data-cta="register"><span data-i18n="hero.ctaPrimary"></span><svg class="icon arrow"><use href="#i-arrow"/></svg></a>
+        <a class="btn btn-outline btn-lg" href="#/login" data-i18n="hero.ctaSecondary"></a>
       </div>
-      <div class="cardx glass rv">
-        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8a63ff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg></div>
-        <h3>大文件可靠传输</h3>
-        <p>文件按 64 MiB 分块、逐块 BLAKE3 校验、位图断点续传——传一半断网，重连后从断点继续，不用重来。整体哈希验证通过才算完成。</p>
-        <div class="tagline">GB～TB 级 · 可恢复 · 可验证</div>
-      </div>
-      <div class="cardx glass rv">
-        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2dd4e8" stroke-width="1.8"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
-        <h3>智能路由选择</h3>
-        <p>持续探测设备间路径：能直连就走直连；被网络环境限制时自动切换你部署的中继节点或对象存储兜底。降级需连续多次采样确认，防止抖动误判。</p>
-        <div class="tagline">DIRECT → RELAY → S3 · 自动降级</div>
-      </div>
-    </div>
-  </section>
+      <p class="fine reveal" data-i18n="hero.fine"></p>
+    </section>
 
-  <section class="sec wrap" id="features">
-    <div class="sec-head rv">
-      <div class="kick">核心原则</div>
-      <h2>为什么敢说<span class="grad-text">"数据不过手"</span></h2>
-      <p>MeshBridge 的第一条架构铁律：控制面只做协调（信令、密钥、任务调度），流量只有 KB 级。你的文件永远走设备之间的通道，大文件想蹭 DERP 小水管会被调度器直接拒绝。</p>
-    </div>
-    <div class="arch glass rv" id="arch">
-      <div class="route-row">
-        <div class="node"><div class="b">① 直连 P2P</div><div class="s">首选 · 全速</div></div>
-        <div class="flow"><span class="pct">绝大多数流量 · 设备间点对点</span></div>
-        <div class="node"><div class="b">目标设备</div><div class="s">WireGuard 隧道</div></div>
-      </div>
-      <div class="route-row">
-        <div class="node"><div class="b">② 自建中继</div><div class="s">直连不可用 · 配额内</div></div>
-        <div class="flow"></div>
-        <div class="node"><div class="b">目标设备</div><div class="s">Peer Relay 节点</div></div>
-      </div>
-      <div class="route-row">
-        <div class="node"><div class="b">③ 对象存储</div><div class="s">异步兜底 · 分块上传</div></div>
-        <div class="flow"></div>
-        <div class="node"><div class="b">目标设备</div><div class="s">拉取 + 校验</div></div>
-      </div>
-      <div class="route-row dead">
-        <div class="node"><div class="b">✗ DERP 小水管</div><div class="s">仅 ≤100 MiB 小文件允许</div></div>
-        <div class="flow"></div>
-        <div class="node"><div class="b">大文件拒绝</div><div class="s">调度器强制拦截</div></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="sec wrap" id="how">
-    <div class="sec-head rv">
-      <div class="kick">三步上手</div>
-      <h2>从注册到传输，<span class="grad-text">十分钟内</span></h2>
-    </div>
-    <div class="steps3">
-      <div class="step glass rv"><div class="num">1</div><h3>注册账号</h3><p>邮箱验证码注册，全程网页操作。首次部署会引导你配置邮件服务，之后可邀请团队按项目隔离设备。</p></div>
-      <div class="step glass rv"><div class="num">2</div><h3>接入设备</h3><p>控制台生成一条安装命令，在 NAS / 服务器 / 工作站上粘贴执行：自动安装 Tailscale 入网 + MeshBridge Agent 心跳上线。</p></div>
-      <div class="step glass rv"><div class="num">3</div><h3>发起传输</h3><p>选源设备、目标设备和路径即可建任务。调度器自动选最优路由，断点续传，全程网页可查进度与审计。</p></div>
-    </div>
-  </section>
-
-  <div class="finale wrap rv">
-    <h2>把互联网上你的设备，<br>连成<span class="grad-text">一张自己的网</span>。</h2>
-    <p>免费注册 · 邮箱验证 · 一条命令接入设备</p>
-    <button class="btn" id="end-register" style="padding:16px 40px;font-size:16px">开始使用 MeshBridge</button>
-  </div>
-
-  <footer><div class="in">
-    <span>MeshBridge · CONTROL ≠ DATA</span><span class="sp"></span>
-    <span>自托管 · SQLite 单文件存储 · Go 单二进制</span>
-  </div></footer>
-</div>
-
-<!-- ================= SETUP ================= -->
-<div id="v-setup" class="center" style="display:none">
-  <a class="back-home" href="#/">← 返回首页</a>
-  <div class="card wide glass">
-    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>初始部署向导</h1></div>
-    <p class="sub">三步完成控制面引导：管理员账号 → 邮件服务 → 设备接入</p>
-    <div class="steps" id="s-steps"><span class="on"></span><span></span><span></span></div>
-
-    <div id="s1">
-      <h2 class="pt">创建管理员账号</h2>
-      <p class="sub" style="margin-bottom:8px">使用邮箱注册，需邮箱验证码确认。</p>
-      <div class="field"><label>邮箱</label>
-        <div class="row"><input id="s1-email" type="email" placeholder="you@example.com" autocomplete="email">
-        <button class="btn ghost slim" style="flex:none" id="s1-send">发送验证码</button></div>
-        <p class="hint" id="s1-cd"></p>
-      </div>
-      <div class="field"><label>验证码</label><input id="s1-code" inputmode="numeric" maxlength="6" placeholder="6 位数字" class="mono"></div>
-      <div class="grid2">
-        <div class="field"><label>用户名（可选）</label><input id="s1-user" placeholder="默认取邮箱前缀"></div>
-        <div class="field"><label>密码（≥12 位）</label><input id="s1-pass" type="password" placeholder="••••••••••••"></div>
-      </div>
-      <div class="banner" id="s1-err"></div>
-      <button class="btn" id="s1-go">创建并继续</button>
-    </div>
-
-    <div id="s2" style="display:none">
-      <h2 class="pt">邮件服务（SMTP）</h2>
-      <p class="sub" style="margin-bottom:8px">用于注册/找回密码的验证码发信。QQ 邮箱：smtp.qq.com，端口 465，密码为授权码。</p>
-      <div class="grid2">
-        <div class="field"><label>SMTP 主机</label><input id="s2-host" placeholder="smtp.qq.com" value="smtp.qq.com"></div>
-        <div class="field"><label>端口</label>
-          <select id="s2-port"><option value="465">465（SSL）</option><option value="587">587（STARTTLS）</option></select></div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>账号</label><input id="s2-user" placeholder="you@qq.com"></div>
-        <div class="field"><label>密码 / 授权码</label><input id="s2-pass" type="password" placeholder="授权码"></div>
-      </div>
-      <div class="field"><label>发件地址（可选，默认同账号）</label><input id="s2-from" placeholder="you@qq.com"></div>
-      <div class="banner" id="s2-err"></div>
-      <div class="row">
-        <button class="btn ghost" id="s2-test">保存并发测试邮件</button>
-        <button class="btn" id="s2-go">跳过 / 继续</button>
-      </div>
-    </div>
-
-    <div id="s3" style="display:none">
-      <h2 class="pt">接入第一台设备</h2>
-      <p class="sub" style="margin-bottom:8px">为设备生成 Tailscale 入网密钥与 Agent 令牌（仅显示一次）。</p>
-      <div class="field"><label>设备主机名</label>
-        <div class="row"><input id="s3-host" placeholder="my-laptop">
-        <button class="btn ghost slim" style="flex:none" id="s3-gen">生成</button></div>
-      </div>
-      <div class="banner" id="s3-err"></div>
-      <div id="s3-out" style="display:none">
-        <div class="field"><label>① Tailscale 入网（preauth key）</label>
-          <div class="cmd"><span class="mono" id="s3-preauth"></span><button class="copy" data-cp="s3-preauth">复制</button></div>
+    <section class="wrap map-wrap reveal">
+      <figure class="terrain" id="hero-map" role="img" data-i18n-attr="aria-label:map.aria">
+        <svg class="terrain-svg" data-terrain="hero" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="map-labels" aria-hidden="true">
+          <div class="map-label" data-node="nas"><b data-i18n="map.nas"></b><span>100.64.0.2</span></div>
+          <div class="map-label" data-node="laptop"><b data-i18n="map.laptop"></b><span>100.64.0.5</span></div>
+          <div class="map-label" data-node="studio"><b data-i18n="map.studio"></b><span>100.64.0.9</span></div>
+          <div class="map-label ctrl" data-node="control"><b data-i18n="map.control"></b><span data-i18n="map.controlNote"></span></div>
         </div>
-        <div class="field"><label>② Agent 令牌（写入目标机 /etc/meshbridge/agent.token，0600）</label>
-          <div class="cmd"><span class="mono secret" id="s3-token"></span><button class="copy" data-cp="s3-token">复制</button></div>
+        <figcaption class="map-legend">
+          <span><i></i><span data-i18n="map.legendDirect"></span></span>
+          <span><i class="sig"></i><span data-i18n="map.legendSignal"></span></span>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="wrap">
+      <div class="facts">
+        <div class="fact reveal"><div class="fact-v display">P2P</div><div class="fact-l" data-i18n="facts.p2pLabel"></div></div>
+        <div class="fact reveal"><div class="fact-v display">64 MiB</div><div class="fact-l" data-i18n="facts.chunkLabel"></div></div>
+        <div class="fact reveal"><div class="fact-v display">BLAKE3</div><div class="fact-l" data-i18n="facts.hashLabel"></div></div>
+        <div class="fact reveal"><div class="fact-v display">≈ 0</div><div class="fact-l" data-i18n="facts.zeroLabel"></div></div>
+      </div>
+    </section>
+
+    <section class="section wrap" id="what">
+      <div class="sec-head">
+        <div class="reveal"><p class="kicker" data-i18n="what.kicker"></p><h2 class="display sec-title" data-i18n="what.title"></h2></div>
+        <p class="sec-body reveal" data-i18n="what.body"></p>
+      </div>
+      <div class="cards">
+        <article class="card reveal">
+          <div class="card-ic"><svg class="icon"><use href="#i-mesh"/></svg></div>
+          <h3 class="display card-title" data-i18n="what.c1Title"></h3>
+          <p class="card-body" data-i18n="what.c1Body"></p>
+          <p class="card-tag" data-i18n="what.c1Tag"></p>
+        </article>
+        <article class="card reveal">
+          <div class="card-ic clay"><svg class="icon"><use href="#i-box"/></svg></div>
+          <h3 class="display card-title" data-i18n="what.c2Title"></h3>
+          <p class="card-body" data-i18n="what.c2Body"></p>
+          <p class="card-tag" data-i18n="what.c2Tag"></p>
+        </article>
+        <article class="card reveal">
+          <div class="card-ic slate"><svg class="icon"><use href="#i-route"/></svg></div>
+          <h3 class="display card-title" data-i18n="what.c3Title"></h3>
+          <p class="card-body" data-i18n="what.c3Body"></p>
+          <p class="card-tag" data-i18n="what.c3Tag"></p>
+        </article>
+      </div>
+    </section>
+
+    <div class="band" id="principle">
+      <section class="section wrap">
+        <div class="sec-head">
+          <div class="reveal"><p class="kicker" data-i18n="principle.kicker"></p><h2 class="display sec-title" data-i18n="principle.title"></h2></div>
+          <p class="sec-body reveal" data-i18n="principle.body"></p>
         </div>
-        <div class="field"><label>③ 在目标机执行</label>
-          <div class="cmd"><span class="mono" id="s3-cmd"></span><button class="copy" data-cp="s3-cmd">复制</button></div>
+        <ol class="ladder reveal">
+          <li class="rung r1">
+            <div class="rung-from"><span class="rung-n">1</span><div><div class="rung-name" data-i18n="principle.r1Name"></div><div class="rung-note" data-i18n="principle.r1Note"></div></div></div>
+            <div class="rung-line"><span class="rung-flow" data-i18n="principle.r1Flow"></span><i class="packet"></i></div>
+            <div class="rung-to"><div class="rung-name" data-i18n="principle.dest"></div><div class="rung-note" data-i18n="principle.r1DestNote"></div></div>
+          </li>
+          <li class="rung r2">
+            <div class="rung-from"><span class="rung-n">2</span><div><div class="rung-name" data-i18n="principle.r2Name"></div><div class="rung-note" data-i18n="principle.r2Note"></div></div></div>
+            <div class="rung-line"><i class="packet"></i></div>
+            <div class="rung-to"><div class="rung-name" data-i18n="principle.dest"></div><div class="rung-note" data-i18n="principle.r2DestNote"></div></div>
+          </li>
+          <li class="rung r3">
+            <div class="rung-from"><span class="rung-n">3</span><div><div class="rung-name" data-i18n="principle.r3Name"></div><div class="rung-note" data-i18n="principle.r3Note"></div></div></div>
+            <div class="rung-line"><i class="packet"></i></div>
+            <div class="rung-to"><div class="rung-name" data-i18n="principle.dest"></div><div class="rung-note" data-i18n="principle.r3DestNote"></div></div>
+          </li>
+          <li class="rung refused">
+            <div class="rung-from"><span class="rung-n">✕</span><div><div class="rung-name" data-i18n="principle.r4Name"></div><div class="rung-note" data-i18n="principle.r4Note"></div></div></div>
+            <div class="rung-line"><i class="packet"></i><span class="x-mark"><svg class="icon"><use href="#i-x"/></svg></span></div>
+            <div class="rung-to"><div class="rung-name" data-i18n="principle.r4Dest"></div><div class="rung-note" data-i18n="principle.r4DestNote"></div></div>
+          </li>
+        </ol>
+      </section>
+    </div>
+
+    <section class="section wrap" id="how">
+      <div class="sec-head">
+        <div class="reveal"><p class="kicker" data-i18n="how.kicker"></p><h2 class="display sec-title" data-i18n="how.title"></h2></div>
+        <p class="sec-body reveal" data-i18n="how.body"></p>
+      </div>
+      <div class="steps">
+        <div class="step reveal"><div class="step-n">01</div><h3 class="display step-title" data-i18n="how.s1Title"></h3><p class="step-body" data-i18n="how.s1Body"></p></div>
+        <div class="step reveal"><div class="step-n">02</div><h3 class="display step-title" data-i18n="how.s2Title"></h3><p class="step-body" data-i18n="how.s2Body"></p></div>
+        <div class="step reveal"><div class="step-n">03</div><h3 class="display step-title" data-i18n="how.s3Title"></h3><p class="step-body" data-i18n="how.s3Body"></p></div>
+      </div>
+    </section>
+
+    <section class="wrap closing">
+      <div class="closing-card reveal">
+        <svg class="terrain-svg" data-terrain="closing" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <h2 class="display closing-title" data-i18n="closing.title"></h2>
+        <p class="closing-body" data-i18n="closing.body"></p>
+        <a class="btn btn-lg" href="#/register" data-cta="register"><span data-i18n="closing.cta"></span><svg class="icon arrow"><use href="#i-arrow"/></svg></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="foot-in">
+        <a class="brand" href="#/"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
+        <span class="foot-tag" data-i18n="footer.tagline"></span>
+        <div class="foot-tools">
+          <div class="lang-picker" data-lang-picker data-up></div>
+          <button class="icon-btn theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:common.toggleTheme;title:common.toggleTheme"><svg class="icon i-sun"><use href="#i-sun"/></svg><svg class="icon i-moon"><use href="#i-moon"/></svg></button>
         </div>
       </div>
-      <button class="btn" id="s3-go">完成，进入控制台</button>
+      <div class="foot-bottom"><span>© <span data-year></span> MeshBridge</span><span data-i18n="footer.stack"></span></div>
     </div>
-  </div>
+  </footer>
 </div>
 
-<!-- ================= LOGIN ================= -->
-<div id="v-login" class="center" style="display:none">
-  <a class="back-home" href="#/">← 返回首页</a>
-  <div class="card glass">
-    <div class="brand"><svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>MeshBridge</h1></div>
-    <p class="sub">私有设备组网 · 大文件传输编排</p>
-    <div class="field"><label>邮箱或用户名</label><input id="l-user" autocomplete="username" placeholder="you@example.com"></div>
-    <div class="field"><label>密码</label><input id="l-pass" type="password" autocomplete="current-password" placeholder="••••••••••••"></div>
-    <div class="banner" id="l-err"></div>
-    <button class="btn" id="l-go">登录</button>
-    <p class="footnote"><a id="go-forgot">忘记密码</a> · <a id="go-register">注册账号</a></p>
+<!-- ═════════════════════════ AUTH + SETUP ═════════════════════════ -->
+<div class="view auth-view" id="view-auth" hidden>
+  <div class="auth-side">
+    <header class="auth-top">
+      <a class="brand" href="#/"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
+      <div class="auth-tools">
+        <div class="lang-picker" data-lang-picker></div>
+        <button class="icon-btn theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:common.toggleTheme;title:common.toggleTheme"><svg class="icon i-sun"><use href="#i-sun"/></svg><svg class="icon i-moon"><use href="#i-moon"/></svg></button>
+      </div>
+    </header>
+
+    <main class="auth-main" id="main-auth">
+      <!-- login -->
+      <section class="auth-card" data-panel="login" hidden>
+        <h1 class="display auth-title" data-i18n="auth.login.title"></h1>
+        <p class="auth-sub" data-i18n="auth.login.sub"></p>
+        <div class="callout" data-role="notice" hidden><svg class="icon"><use href="#i-info"/></svg><div data-role="notice-text"></div></div>
+        <form id="form-login" novalidate>
+          <label class="field"><span class="label" data-i18n="auth.emailOrUser"></span>
+            <input class="input" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required data-i18n-attr="placeholder:auth.emailPh"></label>
+          <label class="field"><span class="label"><span data-i18n="auth.password"></span><a class="link" href="#/forgot" data-i18n="auth.login.forgot"></a></span>
+            <span class="pw"><input class="input" name="password" type="password" autocomplete="current-password" required><button type="button" class="pw-toggle" data-pw-toggle aria-pressed="false" data-i18n-attr="aria-label:common.showPassword"><svg class="icon i-eye"><use href="#i-eye"/></svg><svg class="icon i-eye-off"><use href="#i-eye-off"/></svg></button></span></label>
+          <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+          <div class="form-actions"><button class="btn btn-primary btn-lg btn-block" type="submit" data-i18n="auth.login.submit"></button></div>
+        </form>
+        <p class="auth-alt" data-reg-link><span data-i18n="auth.login.noAccount"></span> <a class="link" href="#/register" data-i18n="auth.login.create"></a></p>
+      </section>
+
+      <!-- register -->
+      <section class="auth-card" data-panel="register" hidden>
+        <h1 class="display auth-title" data-i18n="auth.register.title"></h1>
+        <p class="auth-sub" data-i18n="auth.register.sub"></p>
+        <div class="callout warn" data-role="closed" hidden><svg class="icon"><use href="#i-lock"/></svg><div data-i18n="auth.register.closed"></div></div>
+        <form id="form-register" novalidate>
+          <label class="field"><span class="label" data-i18n="auth.email"></span>
+            <span class="row"><input class="input grow" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" required data-i18n-attr="placeholder:auth.emailPh"><button class="btn btn-outline" type="button" data-send-code="register" data-i18n="auth.sendCode"></button></span></label>
+          <label class="field"><span class="label" data-i18n="auth.code"></span>
+            <input class="input code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required data-i18n-attr="placeholder:auth.codePh"></label>
+          <label class="field"><span class="label"><span data-i18n="auth.username"></span><span class="opt" data-i18n="common.optional"></span></span>
+            <input class="input" name="username" autocomplete="nickname" autocapitalize="none" spellcheck="false" maxlength="32" data-i18n-attr="placeholder:auth.usernamePh"></label>
+          <label class="field"><span class="label"><span data-i18n="auth.password"></span><span class="opt" data-i18n="auth.passwordHint"></span></span>
+            <span class="pw"><input class="input" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><button type="button" class="pw-toggle" data-pw-toggle aria-pressed="false" data-i18n-attr="aria-label:common.showPassword"><svg class="icon i-eye"><use href="#i-eye"/></svg><svg class="icon i-eye-off"><use href="#i-eye-off"/></svg></button></span>
+            <span class="meter" data-meter><span class="meter-bars"><i></i><i></i><i></i><i></i></span><span class="meter-label"></span></span></label>
+          <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+          <div class="form-actions"><button class="btn btn-primary btn-lg btn-block" type="submit" data-i18n="auth.register.submit"></button></div>
+        </form>
+        <p class="auth-alt"><span data-i18n="auth.register.haveAccount"></span> <a class="link" href="#/login" data-i18n="common.signIn"></a></p>
+      </section>
+
+      <!-- forgot -->
+      <section class="auth-card" data-panel="forgot" hidden>
+        <h1 class="display auth-title" data-i18n="auth.forgot.title"></h1>
+        <p class="auth-sub" data-i18n="auth.forgot.sub"></p>
+        <form id="form-forgot" novalidate>
+          <label class="field"><span class="label" data-i18n="auth.email"></span>
+            <span class="row"><input class="input grow" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" required data-i18n-attr="placeholder:auth.emailPh"><button class="btn btn-outline" type="button" data-send-code="reset" data-i18n="auth.sendCode"></button></span></label>
+          <label class="field"><span class="label" data-i18n="auth.code"></span>
+            <input class="input code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required data-i18n-attr="placeholder:auth.codePh"></label>
+          <label class="field"><span class="label"><span data-i18n="auth.passwordNew"></span><span class="opt" data-i18n="auth.passwordHint"></span></span>
+            <span class="pw"><input class="input" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><button type="button" class="pw-toggle" data-pw-toggle aria-pressed="false" data-i18n-attr="aria-label:common.showPassword"><svg class="icon i-eye"><use href="#i-eye"/></svg><svg class="icon i-eye-off"><use href="#i-eye-off"/></svg></button></span>
+            <span class="meter" data-meter><span class="meter-bars"><i></i><i></i><i></i><i></i></span><span class="meter-label"></span></span></label>
+          <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+          <div class="form-actions"><button class="btn btn-primary btn-lg btn-block" type="submit" data-i18n="auth.forgot.submit"></button></div>
+        </form>
+        <p class="auth-alt"><span data-i18n="auth.forgot.remembered"></span> <a class="link" href="#/login" data-i18n="common.signIn"></a></p>
+      </section>
+
+      <!-- setup wizard -->
+      <section class="auth-card wide" data-panel="setup" hidden>
+        <h1 class="display auth-title" data-i18n="setup.title"></h1>
+        <p class="auth-sub" data-i18n="setup.sub"></p>
+        <ol class="stepper" id="stepper">
+          <li data-step="1"><span class="st-n">1</span><span data-i18n="setup.step1"></span></li>
+          <li data-step="2"><span class="st-n">2</span><span data-i18n="setup.step2"></span></li>
+          <li data-step="3"><span class="st-n">3</span><span data-i18n="setup.step3"></span></li>
+        </ol>
+
+        <div data-setup-step="1">
+          <h2 class="step-head" data-i18n="setup.s1Title"></h2>
+          <p class="step-sub" data-i18n="setup.s1Sub"></p>
+          <form id="form-setup" novalidate>
+            <label class="field"><span class="label" data-i18n="auth.email"></span>
+              <span class="row"><input class="input grow" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" required data-i18n-attr="placeholder:auth.emailPh"><button class="btn btn-outline" type="button" data-send-code="setup" data-i18n="auth.sendCode"></button></span></label>
+            <label class="field"><span class="label" data-i18n="auth.code"></span>
+              <input class="input code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required data-i18n-attr="placeholder:auth.codePh"></label>
+            <label class="field"><span class="label"><span data-i18n="auth.username"></span><span class="opt" data-i18n="common.optional"></span></span>
+              <input class="input" name="username" autocomplete="nickname" autocapitalize="none" spellcheck="false" maxlength="32" data-i18n-attr="placeholder:auth.usernamePh"></label>
+            <label class="field"><span class="label"><span data-i18n="auth.password"></span><span class="opt" data-i18n="auth.passwordHint"></span></span>
+              <span class="pw"><input class="input" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><button type="button" class="pw-toggle" data-pw-toggle aria-pressed="false" data-i18n-attr="aria-label:common.showPassword"><svg class="icon i-eye"><use href="#i-eye"/></svg><svg class="icon i-eye-off"><use href="#i-eye-off"/></svg></button></span>
+              <span class="meter" data-meter><span class="meter-bars"><i></i><i></i><i></i><i></i></span><span class="meter-label"></span></span></label>
+            <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+            <div class="callout" data-role="nomail" hidden><svg class="icon"><use href="#i-terminal"/></svg><div><span data-i18n="setup.s1NoMail"></span><pre class="code wrap" data-role="nomail-cmd">meshbridge-server --create-admin &lt;name&gt;</pre><span data-i18n="setup.s1NoMailAfter"></span></div></div>
+            <div class="form-actions"><button class="btn btn-primary btn-lg" type="submit" data-i18n="setup.s1Submit"></button></div>
+          </form>
+        </div>
+
+        <div data-setup-step="2" hidden>
+          <h2 class="step-head" data-i18n="setup.s2Title"></h2>
+          <p class="step-sub" data-i18n="setup.s2Sub"></p>
+          <div data-mount="smtp-setup"></div>
+        </div>
+
+        <div data-setup-step="3" hidden>
+          <h2 class="step-head" data-i18n="setup.s3Title"></h2>
+          <p class="step-sub" data-i18n="enroll.sub"></p>
+          <div data-mount="enroll-setup"></div>
+          <div class="form-actions"><a class="btn btn-primary btn-lg" href="#/app/overview" data-i18n="setup.s3Finish"></a></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="auth-foot"><span>© <span data-year></span> MeshBridge</span><a href="#/" class="link" data-i18n="common.backHome"></a></footer>
   </div>
+
+  <aside class="auth-art" aria-hidden="true">
+    <div class="art-card">
+      <svg class="terrain-svg" data-terrain="auth" preserveAspectRatio="none"></svg>
+      <p class="art-kicker">Control ≠ Data</p>
+      <h2 class="display art-title" data-art="title"></h2>
+      <ul class="art-list">
+        <li><svg class="icon"><use href="#i-check"/></svg><span data-art="p1"></span></li>
+        <li><svg class="icon"><use href="#i-check"/></svg><span data-art="p2"></span></li>
+        <li><svg class="icon"><use href="#i-check"/></svg><span data-art="p3"></span></li>
+      </ul>
+    </div>
+  </aside>
 </div>
 
-<!-- ================= REGISTER ================= -->
-<div id="v-register" class="center" style="display:none">
-  <a class="back-home" href="#/">← 返回首页</a>
-  <div class="card glass">
-    <div class="brand"><svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>注册账号</h1></div>
-    <p class="sub">邮箱验证后即可接入你的设备</p>
-    <div class="field"><label>邮箱</label>
-      <div class="row"><input id="r-email" type="email" placeholder="you@example.com">
-      <button class="btn ghost slim" style="flex:none" id="r-send">发送验证码</button></div>
-      <p class="hint" id="r-cd"></p>
+<!-- ═════════════════════════ CONSOLE ═════════════════════════ -->
+<div class="view app-view" id="view-app" hidden>
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-top">
+      <a class="brand" href="#/app/overview"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
+      <button class="icon-btn sm sb-close" type="button" data-nav-close data-i18n-attr="aria-label:common.close"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <div class="field"><label>验证码</label><input id="r-code" inputmode="numeric" maxlength="6" placeholder="6 位数字" class="mono"></div>
-    <div class="grid2">
-      <div class="field"><label>用户名（可选）</label><input id="r-user" placeholder="默认取邮箱前缀"></div>
-      <div class="field"><label>密码（≥12 位）</label><input id="r-pass" type="password" placeholder="••••••••••••"></div>
-    </div>
-    <div class="banner" id="r-err"></div>
-    <button class="btn" id="r-go">注册</button>
-    <p class="footnote"><a id="back-login1">返回登录</a></p>
-  </div>
-</div>
-
-<!-- ================= FORGOT ================= -->
-<div id="v-forgot" class="center" style="display:none">
-  <a class="back-home" href="#/">← 返回首页</a>
-  <div class="card glass">
-    <div class="brand"><svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>重置密码</h1></div>
-    <p class="sub">输入注册邮箱接收验证码</p>
-    <div class="field"><label>邮箱</label>
-      <div class="row"><input id="f-email" type="email" placeholder="you@example.com">
-      <button class="btn ghost slim" style="flex:none" id="f-send">发送验证码</button></div>
-      <p class="hint" id="f-cd"></p>
-    </div>
-    <div class="field"><label>验证码</label><input id="f-code" inputmode="numeric" maxlength="6" placeholder="6 位数字" class="mono"></div>
-    <div class="field"><label>新密码（≥12 位）</label><input id="f-pass" type="password" placeholder="••••••••••••"></div>
-    <div class="banner" id="f-err"></div>
-    <button class="btn" id="f-go">重置密码</button>
-    <p class="footnote"><a id="back-login2">返回登录</a></p>
-  </div>
-</div>
-
-<!-- ================= APP ================= -->
-<div id="app">
-  <div class="topbar"><div class="topbar-in">
-    <a class="logo" href="#/"><svg width="24" height="24" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg>MeshBridge</a>
-    <nav class="nav" id="tabs">
-      <button data-t="devices" class="on">设备</button>
-      <button data-t="transfers">传输</button>
-      <button data-t="relays">中继</button>
-      <button data-t="audit">审计</button>
-      <button data-t="settings">设置</button>
+    <nav class="sb-nav" aria-label="Console">
+      <a href="#/app/overview" data-nav="overview"><svg class="icon"><use href="#i-grid"/></svg><span data-i18n="app.nav.overview"></span></a>
+      <a href="#/app/devices" data-nav="devices"><svg class="icon"><use href="#i-device"/></svg><span data-i18n="app.nav.devices"></span><span class="count" data-count="devices"></span></a>
+      <a href="#/app/transfers" data-nav="transfers"><svg class="icon"><use href="#i-transfer"/></svg><span data-i18n="app.nav.transfers"></span><span class="count" data-count="transfers"></span></a>
+      <a href="#/app/relays" data-nav="relays"><svg class="icon"><use href="#i-relay"/></svg><span data-i18n="app.nav.relays"></span></a>
+      <a href="#/app/audit" data-nav="audit"><svg class="icon"><use href="#i-audit"/></svg><span data-i18n="app.nav.audit"></span></a>
+      <a href="#/app/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg><span data-i18n="app.nav.settings"></span></a>
     </nav>
-    <div class="spacer"></div>
-    <span class="who" id="who"></span>
-    <button class="btn ghost slim" id="logout">退出</button>
-  </div></div>
-  <div class="wrapx">
-    <section class="pane on" id="p-devices">
-      <div class="pagehead"><h2>设备</h2><div class="spacer"></div>
-        <button class="btn slim" id="add-device">接入设备</button></div>
-      <table><thead><tr><th>主机名</th><th>Tailscale IP</th><th>状态</th><th>最近心跳</th></tr></thead>
-      <tbody id="t-dev"><tr><td colspan="4" class="kv">加载中…</td></tr></tbody></table>
-    </section>
-    <section class="pane" id="p-transfers">
-      <div class="pagehead"><h2>传输任务</h2><div class="spacer"></div>
-        <button class="btn slim" id="add-transfer">新建任务</button></div>
-      <table><thead><tr><th>ID</th><th>源 → 目标</th><th>路径</th><th>状态</th><th>进度</th></tr></thead>
-      <tbody id="t-tr"><tr><td colspan="5" class="kv">加载中…</td></tr></tbody></table>
-    </section>
-    <section class="pane" id="p-relays">
-      <div class="pagehead"><h2>中继节点</h2></div>
-      <table><thead><tr><th>名称</th><th>区域</th><th>健康</th><th>本月流量 / 配额</th></tr></thead>
-      <tbody id="t-relay"><tr><td colspan="4" class="kv">加载中…</td></tr></tbody></table>
-    </section>
-    <section class="pane" id="p-audit">
-      <div class="pagehead"><h2>审计日志</h2></div>
-      <table><thead><tr><th>时间</th><th>操作者</th><th>事件</th><th>详情</th></tr></thead>
-      <tbody id="t-audit"><tr><td colspan="4" class="kv">加载中…</td></tr></tbody></table>
-    </section>
-    <section class="pane" id="p-settings">
-      <div class="pagehead"><h2>设置</h2></div>
-      <div class="card wide glass" style="box-shadow:none;padding:28px">
-        <h2 class="pt">邮件服务（SMTP）</h2>
-        <p class="sub" style="margin-bottom:8px">修改后点击"保存并发测试邮件"验证。</p>
-        <div class="grid2">
-          <div class="field"><label>SMTP 主机</label><input id="set-host" placeholder="smtp.qq.com"></div>
-          <div class="field"><label>端口</label>
-            <select id="set-port"><option value="465">465（SSL）</option><option value="587">587（STARTTLS）</option><option value="25">25</option></select></div>
-        </div>
-        <div class="grid2">
-          <div class="field"><label>账号</label><input id="set-user"></div>
-          <div class="field"><label>密码 / 授权码</label><input id="set-pass" type="password" placeholder="留空表示不修改"></div>
-        </div>
-        <div class="field"><label>发件地址（可选）</label><input id="set-from"></div>
-        <div class="banner" id="set-err"></div>
-        <div class="row">
-          <button class="btn ghost" id="set-test">保存并发测试邮件</button>
-          <button class="btn" id="set-save">保存</button>
-        </div>
-        <div style="margin-top:26px" class="field">
-          <label class="check"><input type="checkbox" id="set-openreg"> 开放公开注册（邮箱验证）</label>
-        </div>
-        <button class="btn ghost slim" id="set-savereg">保存注册开关</button>
+    <div class="sb-foot">
+      <div class="health" id="health"><span class="dot"></span><div><b data-i18n="app.health.title"></b><span data-role="text" data-i18n="app.health.checking"></span></div></div>
+      <div class="user-card">
+        <span class="avatar" id="u-avatar"></span>
+        <div class="who"><b id="u-name"></b><span id="u-role"></span></div>
+        <button class="icon-btn sm" type="button" id="btn-logout" data-i18n-attr="aria-label:common.signOut;title:common.signOut"><svg class="icon"><use href="#i-logout"/></svg></button>
       </div>
-    </section>
+    </div>
+  </aside>
+  <div class="scrim" data-nav-close></div>
+
+  <div class="main-col">
+    <header class="app-top" id="app-top">
+      <button class="icon-btn menu-btn" type="button" id="btn-menu" data-i18n-attr="aria-label:common.menu"><svg class="icon"><use href="#i-menu"/></svg></button>
+      <div class="app-titles"><h1 class="display page-title" id="page-title"></h1><p class="page-sub" id="page-sub"></p></div>
+      <div class="app-tools">
+        <div class="lang-picker" data-lang-picker></div>
+        <button class="icon-btn theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:common.toggleTheme;title:common.toggleTheme"><svg class="icon i-sun"><use href="#i-sun"/></svg><svg class="icon i-moon"><use href="#i-moon"/></svg></button>
+      </div>
+    </header>
+
+    <main class="app-main" id="main-app">
+      <!-- overview -->
+      <section class="page" data-page="overview" hidden>
+        <div class="panel checklist" id="checklist" hidden>
+          <div><h2 class="display checklist-title" data-i18n="app.start.title"></h2><p class="checklist-sub" data-i18n="app.start.sub"></p></div>
+          <span class="check-progress" id="check-progress"></span>
+          <div class="check-items">
+            <div class="check-item" data-check="mail"><span class="ck"><svg class="icon"><use href="#i-check"/></svg></span><div><b data-i18n="app.start.mail"></b><span data-i18n="app.start.mailNote"></span><a class="btn btn-outline btn-xs" href="#/app/settings" data-i18n="app.start.mailAction"></a></div></div>
+            <div class="check-item" data-check="device"><span class="ck"><svg class="icon"><use href="#i-check"/></svg></span><div><b data-i18n="app.start.device"></b><span data-i18n="app.start.deviceNote"></span><button class="btn btn-outline btn-xs" type="button" data-open="enroll" data-i18n="app.devices.add"></button></div></div>
+            <div class="check-item" data-check="transfer"><span class="ck"><svg class="icon"><use href="#i-check"/></svg></span><div><b data-i18n="app.start.transfer"></b><span data-i18n="app.start.transferNote"></span><button class="btn btn-outline btn-xs" type="button" data-open="transfer" data-i18n="app.transfers.new"></button></div></div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat" id="st-devices"><div class="stat-k"><svg class="icon"><use href="#i-device"/></svg><span data-i18n="app.overview.statDevices"></span></div><div class="stat-v" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
+          <div class="stat" id="st-transfers"><div class="stat-k"><svg class="icon"><use href="#i-transfer"/></svg><span data-i18n="app.overview.statTransfers"></span></div><div class="stat-v" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
+          <div class="stat" id="st-relays"><div class="stat-k"><svg class="icon"><use href="#i-relay"/></svg><span data-i18n="app.overview.statRelays"></span></div><div class="stat-v" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
+          <div class="stat" id="st-control"><div class="stat-k"><svg class="icon"><use href="#i-shield"/></svg><span data-i18n="app.overview.statControl"></span></div><div class="stat-v word" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
+        </div>
+        <div class="ov-grid">
+          <div class="panel">
+            <div class="panel-head"><h2 class="display panel-title" data-i18n="app.overview.transfersTitle"></h2><a class="panel-link" href="#/app/transfers"><span data-i18n="app.overview.viewAll"></span><svg class="icon icon-sm"><use href="#i-arrow"/></svg></a></div>
+            <div class="panel-body"><ul class="list" id="ov-transfers"></ul></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2 class="display panel-title" data-i18n="app.overview.activityTitle"></h2><a class="panel-link" href="#/app/audit"><span data-i18n="app.overview.viewAll"></span><svg class="icon icon-sm"><use href="#i-arrow"/></svg></a></div>
+            <div class="panel-body"><ul class="list" id="ov-activity"></ul></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- devices -->
+      <section class="page" data-page="devices" hidden>
+        <div class="toolbar">
+          <label class="search"><svg class="icon"><use href="#i-search"/></svg><input class="input" type="search" id="dev-q" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:app.devices.search;aria-label:app.devices.search"></label>
+          <div class="segmented" id="dev-filter" role="group">
+            <button type="button" data-f="all" aria-pressed="true" data-i18n="common.all"></button>
+            <button type="button" data-f="online" aria-pressed="false" data-i18n="status.online"></button>
+            <button type="button" data-f="offline" aria-pressed="false" data-i18n="status.offline"></button>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn btn-primary btn-sm" type="button" data-open="enroll" data-admin><svg class="icon"><use href="#i-plus"/></svg><span data-i18n="app.devices.add"></span></button>
+        </div>
+        <div class="table-wrap" id="dev-table"></div>
+      </section>
+
+      <!-- transfers -->
+      <section class="page" data-page="transfers" hidden>
+        <div class="toolbar">
+          <div class="segmented" id="tr-filter" role="group">
+            <button type="button" data-f="all" aria-pressed="true" data-i18n="common.all"></button>
+            <button type="button" data-f="active" aria-pressed="false" data-i18n="app.transfers.filterActive"></button>
+            <button type="button" data-f="done" aria-pressed="false" data-i18n="state.COMPLETED"></button>
+            <button type="button" data-f="failed" aria-pressed="false" data-i18n="state.FAILED"></button>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn btn-primary btn-sm" type="button" data-open="transfer"><svg class="icon"><use href="#i-plus"/></svg><span data-i18n="app.transfers.new"></span></button>
+        </div>
+        <div class="table-wrap" id="tr-table"></div>
+      </section>
+
+      <!-- relays -->
+      <section class="page" data-page="relays" hidden>
+        <div id="relay-list"></div>
+      </section>
+
+      <!-- audit -->
+      <section class="page" data-page="audit" hidden>
+        <div class="toolbar">
+          <label class="search"><svg class="icon"><use href="#i-search"/></svg><input class="input" type="search" id="audit-q" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:app.audit.search;aria-label:app.audit.search"></label>
+          <span class="spacer"></span>
+          <button class="btn btn-outline btn-sm" type="button" id="audit-refresh"><svg class="icon"><use href="#i-refresh"/></svg><span data-i18n="common.refresh"></span></button>
+        </div>
+        <div class="table-wrap" id="audit-table"></div>
+        <div class="form-actions" id="audit-more-row" hidden><button class="btn btn-outline btn-sm" type="button" id="audit-more" data-i18n="common.loadMore"></button></div>
+      </section>
+
+      <!-- settings -->
+      <section class="page" data-page="settings" hidden>
+        <div class="settings">
+          <div class="panel set-card">
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.appearanceTitle"></h2><p class="set-desc" data-i18n="app.settings.appearanceDesc"></p></div></div>
+            <div class="set-row">
+              <div class="set-k"><b data-i18n="app.settings.langLabel"></b><span data-i18n="app.settings.langDesc"></span></div>
+              <span class="select-wrap"><select class="select" id="set-lang" data-i18n-attr="aria-label:app.settings.langLabel"></select><svg class="icon chev"><use href="#i-chevron"/></svg></span>
+            </div>
+            <div class="set-row">
+              <div class="set-k"><b data-i18n="app.settings.themeLabel"></b><span data-i18n="app.settings.themeDesc"></span></div>
+              <div class="segmented" id="set-theme" role="group">
+                <button type="button" data-v="system" data-i18n="common.themeSystem"></button>
+                <button type="button" data-v="light" data-i18n="common.themeLight"></button>
+                <button type="button" data-v="dark" data-i18n="common.themeDark"></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel set-card">
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.accountTitle"></h2><p class="set-desc" data-i18n="app.settings.accountDesc"></p></div>
+              <button class="btn btn-outline btn-sm" type="button" data-logout><svg class="icon"><use href="#i-logout"/></svg><span data-i18n="common.signOut"></span></button></div>
+            <dl class="account-grid">
+              <div><dt data-i18n="auth.username"></dt><dd id="acc-name"></dd></div>
+              <div><dt data-i18n="auth.email"></dt><dd id="acc-email"></dd></div>
+              <div><dt data-i18n="app.settings.role"></dt><dd id="acc-role"></dd></div>
+            </dl>
+          </div>
+
+          <div class="panel set-card" data-admin>
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.mailTitle"></h2><p class="set-desc" data-i18n="app.settings.mailDesc"></p></div><span class="pill" id="smtp-status"></span></div>
+            <div data-mount="smtp-settings"></div>
+          </div>
+
+          <div class="panel set-card" data-admin>
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.regTitle"></h2><p class="set-desc" data-i18n="app.settings.regDesc"></p></div>
+              <button class="switch" type="button" role="switch" aria-checked="false" id="set-reg" data-i18n-attr="aria-label:app.settings.regTitle"></button></div>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 </div>
 
-<!-- device enroll modal -->
-<div class="modal-mask" id="m-enroll">
-  <div class="modal">
-    <h3>接入设备</h3>
-    <p class="sub" style="margin:-2px 0 12px">生成 Tailscale 入网密钥 + Agent 令牌，仅显示一次。</p>
-    <div class="field"><label>设备主机名</label>
-      <div class="row"><input id="e-host" placeholder="node-bj-01">
-      <button class="btn ghost slim" style="flex:none" id="e-gen">生成</button></div>
+<!-- ═════════════════════════ MODALS ═════════════════════════ -->
+<div class="modal" id="modal-enroll" role="dialog" aria-modal="true" aria-labelledby="enroll-title" hidden>
+  <div class="modal-scrim" data-close-modal></div>
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <div><h2 class="display modal-title" id="enroll-title" data-i18n="enroll.title"></h2><p class="modal-sub" data-i18n="enroll.sub"></p></div>
+      <button class="icon-btn modal-close" type="button" data-close-modal data-i18n-attr="aria-label:common.close"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <div class="banner" id="e-err"></div>
-    <div id="e-out" style="display:none">
-      <div class="field"><label>① Tailscale 入网密钥</label>
-        <div class="cmd"><span class="mono" id="e-preauth"></span><button class="copy" data-cp="e-preauth">复制</button></div></div>
-      <div class="field"><label>② Agent 令牌</label>
-        <div class="cmd"><span class="mono secret" id="e-token"></span><button class="copy" data-cp="e-token">复制</button></div></div>
-      <div class="field"><label>③ 在目标机执行</label>
-        <div class="cmd"><span class="mono" id="e-cmd"></span><button class="copy" data-cp="e-cmd">复制</button></div></div>
-    </div>
-    <div class="row" style="margin-top:16px"><button class="btn ghost" id="e-close">关闭</button></div>
+    <div data-mount="enroll-modal"></div>
+    <div class="modal-foot"><button class="btn btn-primary" type="button" data-close-modal data-i18n="common.done"></button></div>
   </div>
 </div>
 
-<!-- new transfer modal -->
-<div class="modal-mask" id="m-transfer">
-  <div class="modal">
-    <h3>新建传输任务</h3>
-    <div class="grid2">
-      <div class="field"><label>源设备 ID</label><input id="tf-src" class="mono" placeholder="设备 ID"></div>
-      <div class="field"><label>目标设备 ID</label><input id="tf-dst" class="mono" placeholder="设备 ID"></div>
+<div class="modal" id="modal-transfer" role="dialog" aria-modal="true" aria-labelledby="tf-title" hidden>
+  <div class="modal-scrim" data-close-modal></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <div><h2 class="display modal-title" id="tf-title" data-i18n="tf.title"></h2><p class="modal-sub" data-i18n="tf.sub"></p></div>
+      <button class="icon-btn modal-close" type="button" data-close-modal data-i18n-attr="aria-label:common.close"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <div class="field"><label>源路径（相对设备 allowed_roots）</label><input id="tf-sp" placeholder="datasets/imagenet.tar"></div>
-    <div class="field"><label>目标路径</label><input id="tf-dp" placeholder="datasets/imagenet.tar"></div>
-    <div class="banner" id="tf-err"></div>
-    <div class="row" style="margin-top:14px">
-      <button class="btn ghost" id="tf-cancel">取消</button>
-      <button class="btn" id="tf-go">创建</button>
-    </div>
+    <form id="form-transfer" novalidate>
+      <div class="callout warn" data-role="need" hidden><svg class="icon"><use href="#i-info"/></svg><div data-i18n="tf.needTwo"></div></div>
+      <div class="field" data-role="project-pick">
+        <span class="label"><span data-i18n="tf.project"></span><button class="link" type="button" data-role="project-new" data-i18n="tf.newProject"></button></span>
+        <span class="select-wrap"><select class="select" name="project" data-i18n-attr="aria-label:tf.project"></select><svg class="icon chev"><use href="#i-chevron"/></svg></span>
+        <span class="hint" data-i18n="tf.projectHint"></span>
+      </div>
+      <div class="field" data-role="project-create" hidden>
+        <span class="label" data-i18n="tf.projectName"></span>
+        <span class="row"><input class="input grow" name="projectName" maxlength="64" autocomplete="off" data-i18n-attr="placeholder:tf.projectNamePh;aria-label:tf.projectName"><button class="btn btn-outline" type="button" data-role="project-create-btn" data-i18n="tf.createProject"></button></span>
+        <span class="hint" data-role="project-none" data-i18n="tf.noProjects" hidden></span>
+      </div>
+      <div class="grid-2">
+        <label class="field"><span class="label" data-i18n="tf.src"></span>
+          <span class="select-wrap"><select class="select" name="src"></select><svg class="icon chev"><use href="#i-chevron"/></svg></span></label>
+        <label class="field"><span class="label" data-i18n="tf.dst"></span>
+          <span class="select-wrap"><select class="select" name="dst"></select><svg class="icon chev"><use href="#i-chevron"/></svg></span></label>
+      </div>
+      <label class="field"><span class="label" data-i18n="tf.srcPath"></span>
+        <input class="input mono" name="srcPath" autocomplete="off" autocapitalize="none" spellcheck="false" data-i18n-attr="placeholder:tf.pathPh"></label>
+      <label class="field"><span class="label" data-i18n="tf.dstPath"></span>
+        <input class="input mono" name="dstPath" autocomplete="off" autocapitalize="none" spellcheck="false" data-i18n-attr="placeholder:tf.pathPh">
+        <span class="hint" data-i18n="tf.pathHint"></span></label>
+      <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+      <div class="modal-foot">
+        <button class="btn btn-quiet" type="button" data-close-modal data-i18n="common.cancel"></button>
+        <button class="btn btn-primary" type="submit" data-i18n="tf.submit"></button>
+      </div>
+    </form>
   </div>
 </div>
 
-<script>
-"use strict";
-/* ---------- utilities ---------- */
-const $ = id => document.getElementById(id);
-const TOKEN_KEY = "mb_token";
-const token = () => localStorage.getItem(TOKEN_KEY) || "";
-const setToken = t => t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY);
+<!-- ═════════════════════════ TEMPLATES ═════════════════════════ -->
+<template id="tpl-enroll">
+  <form class="enroll-form" novalidate>
+    <label class="field"><span class="label" data-i18n="enroll.host"></span>
+      <span class="row"><input class="input grow mono" name="host" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="63" data-i18n-attr="placeholder:enroll.hostPh"><button class="btn btn-primary" type="submit" data-i18n="enroll.generate"></button></span>
+      <span class="hint" data-i18n="enroll.hostHint"></span></label>
+    <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+  </form>
+  <div class="enroll-out" data-role="out" hidden>
+    <div class="enroll-head">
+      <span class="pill ok"><span class="dot"></span><span data-role="reg"></span></span>
+      <span class="tag-mono" data-role="id"></span>
+    </div>
+    <div class="callout warn"><svg class="icon"><use href="#i-key"/></svg><div data-i18n="enroll.onceWarn"></div></div>
+    <div class="callout warn" data-role="hs" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="hs-text"></div></div>
+    <div class="kv-block" data-role="preauth-block">
+      <span class="label" data-i18n="enroll.preauth"></span>
+      <div class="secret-row"><span class="mono" data-role="preauth"></span><button class="copy-btn" type="button" data-copy="preauth"><svg class="icon"><use href="#i-copy"/></svg><span data-i18n="common.copy"></span></button></div>
+    </div>
+    <div class="kv-block">
+      <span class="label" data-i18n="enroll.token"></span>
+      <div class="secret-row"><span class="mono hot" data-role="token"></span><button class="copy-btn" type="button" data-copy="token"><svg class="icon"><use href="#i-copy"/></svg><span data-i18n="common.copy"></span></button></div>
+    </div>
+    <div class="os-tabs">
+      <span class="label" data-i18n="enroll.run"></span>
+      <div class="segmented" data-role="os" role="group">
+        <button type="button" data-os="linux" aria-pressed="true">Linux</button>
+        <button type="button" data-os="macos" aria-pressed="false">macOS</button>
+        <button type="button" data-os="windows" aria-pressed="false">Windows</button>
+      </div>
+    </div>
+    <div class="kv-block code-wrap"><pre class="code" data-role="cmd"></pre></div>
+  </div>
+</template>
 
-function toast(msg, cls){
-  const el = document.createElement("div");
-  el.className = "toast " + (cls || "");
-  el.textContent = msg;
-  $("toasts").appendChild(el);
-  setTimeout(()=>{ el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(()=>el.remove(), 320); }, 4200);
-}
-async function api(method, path, body, authed = true){
-  const opt = { method, headers: {} };
-  if (authed && token()) opt.headers["Authorization"] = "Bearer " + token();
-  if (body !== undefined && body !== null){ opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
-  const r = await fetch(path, opt);
-  let data = {};
-  try { data = await r.json(); } catch(_){}
-  if (!r.ok){
-    const e = new Error(data.error || ("HTTP " + r.status));
-    e.status = r.status; e.code = data.code;
-    throw e;
-  }
-  return data;
-}
-function banner(id, msg, cls){
-  const b = $(id);
-  if (!msg){ b.className = "banner"; b.textContent = ""; return; }
-  b.className = "banner show " + (cls || "");
-  b.textContent = msg;
-}
-function copyText(id, btn){
-  navigator.clipboard.writeText($(id).textContent).then(()=>{
-    btn.textContent = "已复制"; setTimeout(()=>btn.textContent = "复制", 1500);
-  });
-}
-document.addEventListener("click", e=>{
-  if (e.target.classList.contains("copy")) copyText(e.target.dataset.cp, e.target);
-});
-function bindSend(btnId, cdId, emailId, purpose, errId){
-  $(btnId).addEventListener("click", async ()=>{
-    banner(errId, "");
-    const email = $(emailId).value.trim().toLowerCase();
-    if (!email){ banner(errId, "请输入邮箱"); return; }
-    $(btnId).disabled = true;
-    try{
-      const d = await api("POST", "/api/v1/auth/send-code", { email, purpose }, false);
-      toast("验证码已发送，请查收邮箱", "ok");
-      countdown($(btnId), $(cdId), d.cooldown_seconds || 60);
-    }catch(err){ banner(errId, err.message); countdown($(btnId), $(cdId), 3); }
-  });
-}
-function countdown(btn, hint, sec){
-  const t0 = Date.now();
-  const tick = setInterval(()=>{
-    const left = sec - Math.floor((Date.now() - t0)/1000);
-    if (left <= 0){ btn.disabled = false; if(hint) hint.textContent = ""; clearInterval(tick); return; }
-    if (hint) hint.textContent = `可重新发送：${left}s`;
-  }, 300);
-  btn.disabled = true;
-}
-function fmtBytes(n){
-  if (!n && n !== 0) return "—";
-  const u = ["B","KB","MB","GB","TB"]; let i = 0;
-  while (n >= 1024 && i < u.length-1){ n /= 1024; i++; }
-  return n.toFixed(n >= 100 || i === 0 ? 0 : 1) + " " + u[i];
-}
-function fmtTime(ts){
-  if (!ts) return "—";
-  return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
-}
-function tableRows(tbodyId, rows, cells){
-  const tb = $(tbodyId); tb.textContent = "";
-  if (!rows.length){
-    const tr = document.createElement("tr"); const td = document.createElement("td");
-    td.className = "kv"; td.colSpan = cells; td.textContent = "暂无数据";
-    tr.appendChild(td); tb.appendChild(tr); return;
-  }
-  for (const r of rows){
-    const tr = document.createElement("tr");
-    for (const c of r){
-      const td = document.createElement("td");
-      if (typeof c === "object"){ if (c.el) td.appendChild(c.el); }
-      else td.textContent = c;
-      tr.appendChild(td);
-    }
-    tb.appendChild(tr);
-  }
-}
-function statusDot(on){
-  const s = document.createElement("span");
-  const d = document.createElement("span");
-  d.className = "dot" + (on ? " on" : "");
-  s.appendChild(d); s.appendChild(document.createTextNode(on ? "在线" : "离线"));
-  return s;
-}
-
-/* ---------- landing interactions ---------- */
-window.addEventListener("scroll", ()=>{
-  const nav = $("landnav");
-  if (nav) nav.classList.toggle("scrolled", window.scrollY > 24);
-}, { passive: true });
-const io = ("IntersectionObserver" in window) ? new IntersectionObserver(es=>{
-  for (const e of es) if (e.isIntersecting){ e.target.classList.add("vis"); io.unobserve(e.target); }
-}, { threshold: .12 }) : null;
-document.querySelectorAll(".rv").forEach(el=>{ io ? io.observe(el) : el.classList.add("vis"); });
-
-/* ---------- router ---------- */
-const views = ["v-landing","v-setup","v-login","v-register","v-forgot"];
-function show(id){
-  for (const v of views) $(v).style.display = "none";
-  $("app").style.display = "none";
-  if (id === "app") $("app").style.display = "block";
-  else if ($(id)) $(id).style.display = "block";
-}
-async function route(){
-  // canonicalize deep links (/register) to hash routes (#/register)
-  const path = location.pathname.replace(/\/+$/, "");
-  if (path && path !== "/" && !location.hash){
-    history.replaceState(null, "", "/" + "#" + path);
-  }
-  const h = location.hash || "#/";
-  try{
-    const st = await api("GET","/api/v1/setup/status",null,false);
-    if (st.setup_required && h !== "#/setup"){ location.hash = "#/setup"; return; }
-    if (h === "#/setup"){
-      if (!st.setup_required){ location.hash = "#/"; return; }
-      show("v-setup"); return;
-    }
-    let me = null;
-    if (token()){
-      try{ me = await api("GET","/api/v1/me"); }catch(_){ setToken(""); me = null; }
-    }
-    switch(h){
-      case "#/register": show("v-register"); return;
-      case "#/forgot":   show("v-forgot"); return;
-      case "#/login":    if (me){ show("app"); enterApp(me); } else show("v-login"); return;
-      case "#/app":
-        if (!me){ location.hash = "#/login"; return; }
-        show("app"); enterApp(me); return;
-      default:           /* #/ → landing or console */
-        if (me){ show("app"); enterApp(me); } else show("v-landing");
-    }
-  }catch(e){ show("v-landing"); }
-}
-window.addEventListener("hashchange", route);
-
-/* landing buttons */
-function goRegister(){ location.hash = "#/register"; }
-function goLogin(){ location.hash = "#/login"; }
-$("nl-register").addEventListener("click", goRegister);
-$("hero-register").addEventListener("click", goRegister);
-$("end-register").addEventListener("click", goRegister);
-$("nl-login").addEventListener("click", goLogin);
-$("hero-login").addEventListener("click", goLogin);
-$("go-register").addEventListener("click", goRegister);
-$("go-forgot").addEventListener("click", ()=>{ location.hash = "#/forgot"; });
-$("back-login1").addEventListener("click", goLogin);
-$("back-login2").addEventListener("click", goLogin);
-
-/* ---------- setup wizard ---------- */
-bindSend("s1-send","s1-cd","s1-email","setup","s1-err");
-$("s1-go").addEventListener("click", async ()=>{
-  banner("s1-err","");
-  const email = $("s1-email").value.trim().toLowerCase();
-  const code = $("s1-code").value.trim();
-  const pass = $("s1-pass").value;
-  if (!email || code.length !== 6){ banner("s1-err","请填写邮箱和 6 位验证码"); return; }
-  if (pass.length < 12){ banner("s1-err","密码至少 12 位"); return; }
-  try{
-    const d = await api("POST","/api/v1/setup/initial",{ email, code, password: pass, username: $("s1-user").value.trim() }, false);
-    setToken(d.token);
-    toast("管理员创建成功：" + d.username, "ok");
-    $("s1").style.display = "none"; $("s2").style.display = "block";
-    $("s-steps").children[0].classList.remove("on"); $("s-steps").children[1].classList.add("on");
-  }catch(err){ banner("s1-err", err.message); }
-});
-function smtpPayload(hostId, portId, userId, passId, fromId){
-  return { host: $(hostId).value.trim(), port: parseInt($(portId).value,10),
-           username: $(userId).value.trim(), password: $(passId).value, from: $(fromId).value.trim() };
-}
-function fillSmtp(hostId, portId, userId, passId, fromId, d){
-  if (!d) return;
-  $(hostId).value = d.host || ""; $(portId).value = d.port || "465";
-  $(userId).value = d.username || ""; $(fromId).value = d.from || "";
-}
-async function smtpSave(errId, hostId, portId, userId, passId, fromId){
-  banner(errId, "");
-  const p = smtpPayload(hostId, portId, userId, passId, fromId);
-  if (!p.host || !p.port || !p.username || !p.password){
-    banner(errId, "主机、端口、账号、密码均必填"); return false;
-  }
-  await api("POST","/api/v1/setup/smtp", p);
-  return true;
-}
-$("s2-test").addEventListener("click", async ()=>{
-  try{
-    if (await smtpSave("s2-err","s2-host","s2-port","s2-user","s2-pass","s2-from")){
-      await api("POST","/api/v1/setup/smtp/test",{});
-      toast("测试邮件已发送，请查收", "ok");
-    }
-  }catch(err){ banner("s2-err", err.message); }
-});
-$("s2-go").addEventListener("click", ()=>{
-  $("s2").style.display = "none"; $("s3").style.display = "block";
-  $("s-steps").children[1].classList.remove("on"); $("s-steps").children[2].classList.add("on");
-});
-async function doEnroll(hostId, errId, preId, tokId, cmdId, outId){
-  banner(errId, "");
-  const hostname = $(hostId).value.trim();
-  if (!hostname){ banner(errId, "请输入主机名"); return; }
-  try{
-    const d = await api("POST","/api/v1/devices/enroll",{ hostname });
-    $(outId).style.display = "block";
-    $(preId).textContent = d.preauth_key || "（headscale 不可用：" + (d.headscale_error || "未知") + "）";
-    $(tokId).textContent = d.agent_token;
-    $(cmdId).textContent =
-      "# 1) 安装并加入 tailnet\ncurl -fsSL https://tailscale.com/install.sh | sh\n" +
-      "sudo tailscale up --login-server " + (location.origin) + " --hostname " + hostname + " --authkey " + d.preauth_key + "\n\n" +
-      "# 2) 写入 Agent 令牌\nsudo mkdir -p /etc/meshbridge && echo '" + d.agent_token + "' | sudo tee /etc/meshbridge/agent.token >/dev/null && sudo chmod 600 /etc/meshbridge/agent.token\n\n" +
-      "# 3) 安装 meshbridge-agent（从发布页下载对应平台二进制后）：\n" +
-      "sudo install -m755 meshbridge-agent /usr/local/bin/\n" +
-      "sudo meshbridge-agent --controller " + location.origin + " --device-id " + d.device_id + " --token-file /etc/meshbridge/agent.token";
-    toast("设备已生成，密钥仅显示一次", "ok");
-  }catch(err){ banner(errId, err.message); }
-}
-$("s3-gen").addEventListener("click", ()=>doEnroll("s3-host","s3-err","s3-preauth","s3-token","s3-cmd","s3-out"));
-$("s3-go").addEventListener("click", ()=>{ location.hash = "#/app"; });
-
-/* ---------- login / register / forgot ---------- */
-$("l-go").addEventListener("click", doLogin);
-$("l-pass").addEventListener("keydown", e=>{ if (e.key === "Enter") doLogin(); });
-async function doLogin(){
-  banner("l-err","");
-  try{
-    const d = await api("POST","/api/v1/auth/login",
-      { username: $("l-user").value.trim(), password: $("l-pass").value }, false);
-    setToken(d.token); location.hash = "#/app";
-  }catch(err){ banner("l-err", err.status === 429 ? "尝试过于频繁，请稍后再试" : "账号或密码错误"); }
-}
-bindSend("r-send","r-cd","r-email","register","r-err");
-$("r-go").addEventListener("click", async ()=>{
-  banner("r-err","");
-  if ($("r-pass").value.length < 12){ banner("r-err","密码至少 12 位"); return; }
-  try{
-    const d = await api("POST","/api/v1/auth/register",{
-      email: $("r-email").value.trim().toLowerCase(), code: $("r-code").value.trim(),
-      password: $("r-pass").value, username: $("r-user").value.trim() }, false);
-    setToken(d.token); toast("注册成功", "ok"); location.hash = "#/app";
-  }catch(err){ banner("r-err", err.message); }
-});
-bindSend("f-send","f-cd","f-email","reset","f-err");
-$("f-go").addEventListener("click", async ()=>{
-  banner("f-err","");
-  if ($("f-pass").value.length < 12){ banner("f-err","密码至少 12 位"); return; }
-  try{
-    await api("POST","/api/v1/auth/password-reset",{
-      email: $("f-email").value.trim().toLowerCase(), code: $("f-code").value.trim(),
-      new_password: $("f-pass").value }, false);
-    toast("密码已重置，请用新密码登录", "ok"); location.hash = "#/login";
-  }catch(err){ banner("f-err", err.message); }
-});
-
-/* ---------- app ---------- */
-let curTab = "devices";
-$("tabs").addEventListener("click", e=>{
-  if (e.target.dataset.t){
-    curTab = e.target.dataset.t;
-    for (const b of $("tabs").children) b.classList.toggle("on", b === e.target);
-    for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
-    $("p-" + curTab).classList.add("on");
-    loadTab();
-  }
-});
-$("logout").addEventListener("click", async ()=>{
-  try{ await api("POST","/api/v1/auth/logout"); }catch(_){}
-  setToken(""); location.hash = "#/";
-});
-async function enterApp(me){
-  $("who").textContent = me.username + (me.role === "admin" ? " · 管理员" : "");
-  loadTab();
-  if (me.role === "admin"){
-    const d = await api("GET","/api/v1/setup/smtp");
-    fillSmtp("set-host","set-port","set-user","set-pass","set-from", d);
-    $("set-pass").placeholder = d.configured ? "已保存（留空不修改）" : "未配置";
-    const st = await api("GET","/api/v1/setup/status");
-    $("set-openreg").checked = !!st.allow_registration;
-  } else {
-    $("tabs").querySelector('[data-t="settings"]').style.display = "none";
-  }
-}
-function loadTab(){
-  if (curTab === "devices") loadDevices();
-  else if (curTab === "transfers") loadTransfers();
-  else if (curTab === "relays") loadRelays();
-  else if (curTab === "audit") loadAudit();
-}
-async function loadDevices(){
-  try{
-    const d = await api("GET","/api/v1/devices?limit=200");
-    tableRows("t-dev", d.items.map(x=>[x.hostname, x.tailscale_ip || "—",
-      { el: statusDot(x.online) }, fmtTime(x.last_seen)]), 4);
-  }catch(err){ toast("设备加载失败：" + err.message, "err"); }
-}
-async function loadTransfers(){
-  try{
-    const d = await api("GET","/api/v1/transfers?limit=200");
-    tableRows("t-tr", d.items.map(x=>[x.id, x.src + " → " + x.dst,
-      (x.route || "—"), x.state, fmtBytes(x.bytes_done) + " / " + fmtBytes(x.bytes_total)]), 5);
-  }catch(err){ toast("任务加载失败：" + err.message, "err"); }
-}
-async function loadRelays(){
-  try{
-    const d = await api("GET","/api/v1/relays");
-    tableRows("t-relay", d.items.map(x=>[x.name, x.region,
-      x.healthy ? "健康" : "异常", fmtBytes(x.bytes_out_month) + " / " + fmtBytes(x.quota)]), 4);
-  }catch(err){ toast("中继加载失败：" + err.message, "err"); }
-}
-async function loadAudit(){
-  try{
-    const d = await api("GET","/api/v1/audit?limit=100");
-    tableRows("t-audit", d.items.map(x=>[fmtTime(x.ts), x.actor, x.event, x.detail || "—"]), 4);
-  }catch(err){ toast("审计加载失败：" + err.message, "err"); }
-}
-/* enroll modal */
-$("add-device").addEventListener("click", ()=>{ $("m-enroll").classList.add("show"); banner("e-err",""); });
-$("e-close").addEventListener("click", ()=>{ $("m-enroll").classList.remove("show"); loadDevices(); });
-$("e-gen").addEventListener("click", ()=>doEnroll("e-host","e-err","e-preauth","e-token","e-cmd","e-out"));
-/* transfer modal */
-$("add-transfer").addEventListener("click", ()=>{ $("m-transfer").classList.add("show"); banner("tf-err",""); });
-$("tf-cancel").addEventListener("click", ()=>$("m-transfer").classList.remove("show"));
-$("tf-go").addEventListener("click", async ()=>{
-  banner("tf-err","");
-  try{
-    await api("POST","/api/v1/transfers",{
-      src_device_id: $("tf-src").value.trim(), dst_device_id: $("tf-dst").value.trim(),
-      src_path: $("tf-sp").value.trim(), dst_path: $("tf-dp").value.trim() });
-    $("m-transfer").classList.remove("show"); toast("任务已创建", "ok"); loadTransfers();
-  }catch(err){ banner("tf-err", err.message); }
-});
-/* settings */
-$("set-save").addEventListener("click", async ()=>{
-  try{
-    const p = smtpPayload("set-host","set-port","set-user","set-pass","set-from");
-    if (!p.password) delete p.password;   // keep stored secret when blank
-    await api("POST","/api/v1/setup/smtp", p);
-    toast("SMTP 配置已保存", "ok");
-  }catch(err){ banner("set-err", err.message); }
-});
-$("set-test").addEventListener("click", async ()=>{
-  try{
-    const p = smtpPayload("set-host","set-port","set-user","set-pass","set-from");
-    if (p.host && p.password) await api("POST","/api/v1/setup/smtp", p);
-    else if (p.host){
-      delete p.password; await api("POST","/api/v1/setup/smtp", p);
-    }
-    await api("POST","/api/v1/setup/smtp/test",{});
-    toast("测试邮件已发送，请查收", "ok");
-  }catch(err){ banner("set-err", err.message); }
-});
-$("set-savereg").addEventListener("click", async ()=>{
-  try{
-    await api("POST","/api/v1/setup/registration", { allow: $("set-openreg").checked });
-    toast("已保存", "ok");
-  }catch(err){ toast(err.message, "err"); }
-});
-
-route();
-</script>
+<template id="tpl-smtp">
+  <form class="smtp-form" novalidate>
+    <div class="field"><span class="label" data-i18n="smtp.presets"></span><div class="chips" data-role="presets"></div></div>
+    <div class="grid-2">
+      <label class="field"><span class="label" data-i18n="smtp.host"></span>
+        <input class="input" name="host" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="smtp.example.com"></label>
+      <label class="field"><span class="label" data-i18n="smtp.port"></span>
+        <span class="select-wrap"><select class="select" name="port"><option value="465"></option><option value="587"></option><option value="25"></option></select><svg class="icon chev"><use href="#i-chevron"/></svg></span></label>
+    </div>
+    <div class="grid-2">
+      <label class="field"><span class="label" data-i18n="smtp.user"></span>
+        <input class="input" name="username" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
+      <label class="field"><span class="label" data-i18n="smtp.pass"></span>
+        <span class="pw"><input class="input" name="password" type="password" autocomplete="new-password"><button type="button" class="pw-toggle" data-pw-toggle aria-pressed="false" data-i18n-attr="aria-label:common.showPassword"><svg class="icon i-eye"><use href="#i-eye"/></svg><svg class="icon i-eye-off"><use href="#i-eye-off"/></svg></button></span></label>
+    </div>
+    <label class="field"><span class="label"><span data-i18n="smtp.from"></span><span class="opt" data-i18n="common.optional"></span></span>
+      <input class="input" name="from" autocomplete="off" autocapitalize="none" spellcheck="false" data-i18n-attr="placeholder:smtp.fromPh"></label>
+    <p class="hint" data-role="provider-hint" hidden></p>
+    <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+    <div class="form-actions" data-role="actions"></div>
+  </form>
+</template>
 </body>
 </html>

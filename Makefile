@@ -1,9 +1,9 @@
-.PHONY: tidy test vet build build-all clean smoke
+.PHONY: tidy test vet race sync-web fonts i18n-check build build-all clean smoke
 
 tidy:
 	go mod tidy
 
-test:
+test: sync-web
 	go test ./... -count=1
 
 vet:
@@ -14,8 +14,16 @@ race:
 
 # The server binary embeds the UI; web/ is canonical, the embed copy is generated.
 sync-web:
+	rm -rf cmd/meshbridge-server/web
 	mkdir -p cmd/meshbridge-server/web
-	cp web/index.html cmd/meshbridge-server/web/index.html
+	cp -R web/. cmd/meshbridge-server/web/
+
+# Re-subset CJK display fonts after editing titles in web/assets/i18n (needs network).
+fonts:
+	python3 scripts/fetch-fonts.py
+
+i18n-check:
+	python3 scripts/check-i18n.py
 
 build: sync-web
 	go build -o bin/meshbridge-server ./cmd/meshbridge-server

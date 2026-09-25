@@ -3,6 +3,9 @@
 > Agent 每次开始工作先读此文件. 用户最后提供 SSH 后才做真实部署.
 
 ## Current Phase
+## Current Phase
+
+- **前端视觉基准（强制）**: 用户亲自重写的 web/assets UI（natural-tone 设计系统: 亚麻纸/森林绿/陶土色系 + Fraunces 衬线排印 + 生成式 SVG 地形艺术 + 严格 CSP + 9 语言 i18n）是项目唯一视觉标准。任何前端工作前先读 **docs/DESIGN-NOTES.md**，禁止回退到通用 SaaS 渐变风格。注意: 该版本截至 2026-09-25 尚未部署到生产（i18n 词典暂只有 en.json，其余语言待补），部署需用户确认。
 
 - Phase 0: DONE (repo skeleton + docs + threat model + pinned versions, 2026-09-25)
 - Phase 1: READY (Control VPS automation 已写 Ansible/systemd/Caddy/Headscale 模板, 待 SSH 后执行)
