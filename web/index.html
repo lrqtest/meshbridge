@@ -4,156 +4,425 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<title>MeshBridge</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b9dff'/%3E%3Cpath d='M9 21V11l7 6 7-6v10' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="description" content="MeshBridge — 私有设备组网与大文件传输编排。设备间 WireGuard 加密直连，大文件不经过第三方，断点续传、逐块校验。">
+<title>MeshBridge · 私有设备组网与大文件传输</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235b9dff'/%3E%3Cstop offset='1' stop-color='%238a63ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ccircle cx='9' cy='22' r='3' fill='%23fff'/%3E%3Ccircle cx='23' cy='22' r='3' fill='%23fff'/%3E%3Ccircle cx='16' cy='9' r='3' fill='%23fff'/%3E%3Cpath d='M9 22L16 9l7 13M9 22h14' stroke='%23fff' stroke-width='1.8' fill='none' opacity='.85'/%3E%3C/svg%3E">
 <style>
+/* ================= design tokens ================= */
 :root{
-  --bg:#0a0b0d; --panel:#121417; --panel2:#17191d; --border:#23262c; --border2:#2e3239;
-  --text:#e8eaed; --muted:#9ba1a9; --faint:#6b7178;
-  --accent:#5b9dff; --accent-h:#6fabff; --accent-press:#4785e8; --accent-soft:rgba(91,157,255,.12);
-  --ok:#34c37a; --warn:#e5a13a; --err:#e5615c;
-  --shadow:0 8px 30px rgba(0,0,0,.35);
-  --r:12px; --r-s:8px;
+  --bg:#07080b; --bg2:#0b0d12;
+  --panel:rgba(255,255,255,.028); --panel2:rgba(255,255,255,.05);
+  --border:rgba(255,255,255,.09); --border2:rgba(255,255,255,.16);
+  --text:#eceef2; --muted:#a3aab5; --faint:#6d7480;
+  --accent:#5b9dff; --accent2:#8a63ff; --cyan:#2dd4e8;
+  --grad:linear-gradient(100deg,#5b9dff 0%,#8a63ff 55%,#2dd4e8 110%);
+  --ok:#34d399; --warn:#f0b454; --err:#f26d6d;
+  --glow:0 0 44px rgba(91,157,255,.24);
+  --r:16px; --r-s:10px;
+  --ease:cubic-bezier(.22,.7,.3,1);
 }
 @media (prefers-color-scheme: light){ :root{
-  --bg:#f6f7f9; --panel:#ffffff; --panel2:#f2f4f6; --border:#e4e7eb; --border2:#d4d9df;
-  --text:#181b1f; --muted:#5f6670; --faint:#9aa1aa;
-  --accent:#2e6fdb; --accent-h:#3d7ce4; --accent-press:#2761c4; --accent-soft:rgba(46,111,219,.10);
-  --shadow:0 8px 30px rgba(20,30,50,.10);
+  --bg:#f5f7fb; --bg2:#eef1f7;
+  --panel:rgba(255,255,255,.75); --panel2:rgba(20,40,90,.05);
+  --border:rgba(15,30,70,.10); --border2:rgba(15,30,70,.2);
+  --text:#141824; --muted:#525c6e; --faint:#8b94a6;
+  --glow:0 8px 40px rgba(70,110,220,.18);
 }}
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
+html{scroll-behavior:smooth}
 body{
-  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  font:15.5px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
   background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
 }
-a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-h)}
+::selection{background:rgba(91,157,255,.35)}
+a{color:inherit;text-decoration:none}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
 
-/* ---------- auth / wizard shell ---------- */
-.center{min-height:100%;display:flex;align-items:center;justify-content:center;padding:32px 16px}
-.card{
-  width:100%;max-width:420px;background:var(--panel);border:1px solid var(--border);
-  border-radius:var(--r);box-shadow:var(--shadow);padding:32px;
+/* ================= ambient background ================= */
+.bgfx{position:fixed;inset:0;z-index:-1;overflow:hidden;background:var(--bg)}
+.bgfx .orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 26s var(--ease) infinite alternate}
+.orb.o1{width:620px;height:620px;left:-160px;top:-180px;background:radial-gradient(circle,rgba(91,157,255,.34),transparent 65%)}
+.orb.o2{width:520px;height:520px;right:-140px;top:12%;background:radial-gradient(circle,rgba(138,99,255,.30),transparent 65%);animation-delay:-9s}
+.orb.o3{width:460px;height:460px;left:34%;bottom:-220px;background:radial-gradient(circle,rgba(45,212,232,.22),transparent 65%);animation-delay:-17s}
+@keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(70px,44px) scale(1.12)}}
+.bgfx .grid{position:absolute;inset:0;
+  background-image:linear-gradient(rgba(140,160,200,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(140,160,200,.05) 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(ellipse 90% 62% at 50% 0%,#000 35%,transparent 78%);
+  -webkit-mask-image:radial-gradient(ellipse 90% 62% at 50% 0%,#000 35%,transparent 78%);
 }
-.card.wide{max-width:560px}
-.brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-.mark{width:26px;height:26px;border-radius:8px;flex:none;
-  background:linear-gradient(135deg,var(--accent) 0%,#8a63ff 100%);
-  box-shadow:0 2px 10px rgba(91,157,255,.35)}
-.brand h1{font-size:19px;font-weight:650;letter-spacing:.2px}
-.sub{color:var(--muted);font-size:13.5px;margin-bottom:24px}
-h2{font-size:16px;font-weight:600;margin-bottom:4px}
+
+/* ================= shared bits ================= */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:var(--grad);color:#fff;border:none;border-radius:12px;
+  padding:13px 26px;font-size:15px;font-weight:650;cursor:pointer;letter-spacing:.2px;
+  box-shadow:0 4px 24px rgba(100,120,255,.35),inset 0 1px 0 rgba(255,255,255,.22);
+  transition:transform .15s var(--ease), box-shadow .2s, filter .2s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 8px 34px rgba(100,120,255,.45);filter:brightness(1.06)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border2);box-shadow:none}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent);box-shadow:none}
+.btn.slim{padding:9px 18px;font-size:13.5px;border-radius:10px}
+.glass{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
 .field{margin:14px 0}
-label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
-input,select{
-  width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);
-  border-radius:var(--r-s);padding:10px 12px;font-size:14.5px;outline:none;transition:border .15s, box-shadow .15s;
-}
-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:550}
+input,select{width:100%;background:rgba(0,0,0,.24);color:var(--text);border:1px solid var(--border);
+  border-radius:var(--r-s);padding:11px 13px;font-size:14.5px;outline:none;
+  transition:border .18s, box-shadow .18s, background .18s}
+@media (prefers-color-scheme: light){ input,select{background:rgba(255,255,255,.85)} }
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3.5px rgba(91,157,255,.16)}
 input::placeholder{color:var(--faint)}
-.row{display:flex;gap:10px}
-.row>*{flex:1}
-.btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
-  background:var(--accent);color:#fff;border:none;border-radius:var(--r-s);
-  padding:11px 16px;font-size:14.5px;font-weight:600;cursor:pointer;transition:background .15s, transform .05s;
-}
-.btn:hover{background:var(--accent-h)} .btn:active{background:var(--accent-press);transform:translateY(1px)}
-.btn:disabled{opacity:.55;cursor:not-allowed}
-.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border2)}
-.btn.ghost:hover{border-color:var(--accent);color:var(--accent);background:transparent}
-.btn.slim{width:auto;padding:8px 14px;font-size:13.5px}
-.footnote{text-align:center;color:var(--muted);font-size:13.5px;margin-top:18px}
-.hint{color:var(--faint);font-size:12.5px;margin-top:5px}
-
-/* steps */
-.steps{display:flex;gap:8px;margin:0 0 22px}
-.steps span{height:4px;flex:1;border-radius:2px;background:var(--border)}
-.steps span.on{background:var(--accent)}
-
-/* banner */
-.banner{
-  display:none;border:1px solid var(--border);border-left:3px solid var(--err);
-  background:var(--panel2);border-radius:var(--r-s);padding:10px 12px;font-size:13.5px;color:var(--text);margin:12px 0;
-}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.banner{display:none;border:1px solid var(--border);border-left:3px solid var(--err);
+  background:var(--panel2);border-radius:var(--r-s);padding:10px 13px;font-size:13.5px;margin:12px 0}
 .banner.ok{border-left-color:var(--ok)} .banner.warn{border-left-color:var(--warn)}
 .banner.show{display:block}
+.hint{color:var(--faint);font-size:12.5px;margin-top:5px}
 
-/* toast */
+/* toasts */
 #toasts{position:fixed;top:18px;right:18px;z-index:99;display:flex;flex-direction:column;gap:8px}
-.toast{
-  background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);
-  padding:11px 16px;font-size:13.5px;max-width:340px;animation:tin .25s ease;
-}
+.toast{background:rgba(16,19,26,.92);border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 10px 40px rgba(0,0,0,.5);padding:12px 16px;font-size:13.5px;max-width:340px;
+  color:#eceef2;animation:tin .3s var(--ease);backdrop-filter:blur(12px)}
 .toast.ok{border-left:3px solid var(--ok)} .toast.err{border-left:3px solid var(--err)}
-@keyframes tin{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+@keyframes tin{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 
-/* ---------- app shell ---------- */
-#app{display:none;min-height:100%}
-.topbar{
-  position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 82%,transparent);
-  backdrop-filter:blur(10px);border-bottom:1px solid var(--border);
-}
-.topbar-in{max-width:1080px;margin:0 auto;padding:0 20px;height:58px;display:flex;align-items:center;gap:18px}
-.topbar .brand h1{font-size:16px}
-.nav{display:flex;gap:4px;margin-left:8px}
-.nav button{
-  background:none;border:none;color:var(--muted);font-size:14px;padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:500;
-}
-.nav button:hover{color:var(--text);background:var(--panel2)}
-.nav button.on{color:var(--accent);background:var(--accent-soft)}
-.spacer{flex:1}
-.who{color:var(--muted);font-size:13.5px}
-.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
-.pagehead{display:flex;align-items:center;gap:12px;margin-bottom:18px}
-.pagehead h2{font-size:20px;margin:0}
-.pane{display:none} .pane.on{display:block}
+/* ================= landing ================= */
+#v-landing{display:none}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+nav.top{position:fixed;top:0;left:0;right:0;z-index:40;transition:background .25s,border .25s;
+  border-bottom:1px solid transparent}
+nav.top.scrolled{background:color-mix(in srgb,var(--bg) 78%,transparent);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom-color:var(--border)}
+nav.top .in{max-width:1120px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:26px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.2px}
+.logo svg{display:block}
+nav.top .links{display:flex;gap:22px;font-size:14px;color:var(--muted);margin-left:6px}
+nav.top .links a{cursor:pointer}
+nav.top .links a:hover{color:var(--text)}
+nav.top .sp{flex:1}
+nav.top .auth{display:flex;gap:10px;align-items:center}
+nav.top .auth .login-link{color:var(--muted);font-size:14px;padding:8px 12px;border-radius:9px;cursor:pointer}
+nav.top .auth .login-link:hover{color:var(--text);background:var(--panel2)}
 
-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
-th,td{padding:11px 14px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--border)}
-th{color:var(--muted);font-weight:600;background:var(--panel2);font-size:12.5px;letter-spacing:.3px}
-tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:var(--faint)}
-.dot.on{background:var(--ok);box-shadow:0 0 8px rgba(52,195,122,.6)}
-.badge{font-size:12px;padding:2px 9px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
-.badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--border))}
-.badge.err{color:var(--err);border-color:color-mix(in srgb,var(--err) 35%,var(--border))}
+/* hero */
+.hero{position:relative;padding:172px 0 96px;text-align:center}
+.hero .pill{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
+  border:1px solid var(--border);border-radius:999px;padding:7px 16px;margin-bottom:26px;
+  background:var(--panel);backdrop-filter:blur(8px)}
+.hero .pill .dotp{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);
+  animation:pulse 2.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.hero h1{font-size:clamp(38px,6.4vw,68px);line-height:1.12;font-weight:800;letter-spacing:-.02em;max-width:880px;margin:0 auto}
+.hero .sub{font-size:clamp(15.5px,2vw,18.5px);color:var(--muted);max-width:660px;margin:26px auto 0;line-height:1.75}
+.hero .sub b{color:var(--text);font-weight:600}
+.hero .cta{display:flex;gap:14px;justify-content:center;margin-top:38px;flex-wrap:wrap}
+.hero .cta .btn{padding:15px 34px;font-size:16px;border-radius:14px}
+.hero .note{margin-top:18px;font-size:13px;color:var(--faint)}
 
-.cmd{
-  position:relative;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-s);
-  padding:12px 44px 12px 14px;overflow-x:auto;white-space:pre;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--text);
+/* hero network diagram */
+.net{max-width:900px;margin:74px auto 0;position:relative}
+.net svg{width:100%;height:auto;display:block}
+
+/* marquee stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:980px;margin:0 auto;padding:10px 0 0}
+.stat{padding:22px 10px;text-align:center;border-radius:var(--r)}
+.stat .n{font-size:clamp(22px,3vw,30px);font-weight:800;background:var(--grad);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.stat .t{font-size:13px;color:var(--muted);margin-top:5px}
+@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+/* sections */
+section.sec{padding:110px 0 20px}
+.sec-head{text-align:center;max-width:680px;margin:0 auto 54px}
+.sec-head .kick{font-size:13px;font-weight:700;letter-spacing:.22em;color:var(--accent)}
+.sec-head h2{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:-.015em;margin:12px 0 14px}
+.sec-head p{color:var(--muted);font-size:16px;line-height:1.8}
+
+.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:900px){.cards3{grid-template-columns:1fr}}
+.cardx{padding:30px 28px;border-radius:var(--r);position:relative;overflow:hidden;
+  transition:transform .3s var(--ease), border .3s}
+.cardx:hover{transform:translateY(-4px);border-color:var(--border2)}
+.cardx .ic{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,rgba(91,157,255,.16),rgba(138,99,255,.16));
+  border:1px solid rgba(91,157,255,.25);margin-bottom:20px}
+.cardx h3{font-size:17.5px;font-weight:700;margin-bottom:10px}
+.cardx p{font-size:14.5px;color:var(--muted);line-height:1.8}
+.cardx .tagline{margin-top:16px;font-size:12.5px;color:var(--accent)}
+
+/* route / architecture visual */
+.arch{max-width:920px;margin:0 auto;border-radius:20px;padding:34px 30px}
+.route-row{display:flex;align-items:center;gap:0;margin:18px 0}
+.route-row .node{flex:none;text-align:center;width:150px}
+.route-row .node .b{padding:12px 10px;border-radius:12px;border:1px solid var(--border);
+  background:var(--panel2);font-size:13.5px;font-weight:650}
+.route-row .node .s{font-size:11.5px;color:var(--faint);margin-top:5px}
+.route-row .flow{flex:1;height:2px;position:relative;background:linear-gradient(90deg,rgba(91,157,255,.5),rgba(138,99,255,.15));
+  margin:0 4px;min-width:40px;border-radius:2px}
+.route-row .flow::after{content:"";position:absolute;right:-1px;top:-3.5px;border:5px solid transparent;border-left-color:rgba(91,157,255,.75)}
+.route-row .pct{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:11.5px;color:var(--faint);white-space:nowrap}
+.route-row.dead .flow{background:repeating-linear-gradient(90deg,rgba(242,109,109,.5) 0 6px,transparent 6px 12px)}
+.route-row.dead .flow::after{border-left-color:rgba(242,109,109,.6)}
+@media(max-width:720px){
+  .route-row{flex-direction:column;gap:8px}
+  .route-row .flow{width:2px;height:26px;background:linear-gradient(180deg,rgba(91,157,255,.5),rgba(138,99,255,.15))!important}
+  .route-row .flow::after{right:auto;left:-4px;top:auto;bottom:-1px;border:5px solid transparent;border-top-color:rgba(91,157,255,.75)}
 }
-.copy{position:absolute;top:8px;right:8px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);
-  border-radius:6px;font-size:11.5px;padding:3px 8px;cursor:pointer}
+
+/* steps */
+.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:900px){.steps3{grid-template-columns:1fr}}
+.step{padding:28px;border-radius:var(--r)}
+.step .num{width:34px;height:34px;border-radius:10px;background:var(--grad);color:#fff;font-weight:800;
+  display:flex;align-items:center;justify-content:center;font-size:15px;margin-bottom:18px}
+.step h3{font-size:16.5px;margin-bottom:8px}
+.step p{font-size:14px;color:var(--muted);line-height:1.75}
+
+/* final cta */
+.finale{text-align:center;padding:110px 0 60px}
+.finale h2{font-size:clamp(30px,4.6vw,46px);font-weight:800;letter-spacing:-.015em}
+.finale p{color:var(--muted);margin:16px 0 34px;font-size:16px}
+footer{border-top:1px solid var(--border);padding:34px 0 44px;color:var(--faint);font-size:13px}
+footer .in{max-width:1120px;margin:0 auto;padding:0 24px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+footer .sp{flex:1}
+
+/* reveal on scroll */
+.rv{opacity:0;transform:translateY(26px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.rv.vis{opacity:1;transform:none}
+
+/* ================= auth / wizard ================= */
+.center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:110px 16px 60px}
+.card{width:100%;max-width:430px;padding:34px;box-shadow:var(--glow)}
+.card.wide{max-width:580px}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:8px}
+.brand h1{font-size:19px;font-weight:750;letter-spacing:.2px}
+.sub{color:var(--muted);font-size:14px;margin-bottom:24px}
+h2.pt{font-size:17px;font-weight:700;margin-bottom:4px}
+.footnote{text-align:center;color:var(--muted);font-size:13.5px;margin-top:20px}
+.footnote a{color:var(--accent);cursor:pointer}
+.back-home{position:fixed;top:22px;left:24px;z-index:30;display:inline-flex;align-items:center;gap:8px;
+  color:var(--muted);font-size:13.5px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);
+  background:var(--panel);backdrop-filter:blur(10px);cursor:pointer;transition:color .2s,border .2s}
+.back-home:hover{color:var(--text);border-color:var(--border2)}
+.steps{display:flex;gap:8px;margin:0 0 24px}
+.steps span{height:4px;flex:1;border-radius:2px;background:var(--border)}
+.steps span.on{background:var(--grad)}
+.cmd{position:relative;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:var(--r-s);
+  padding:13px 46px 13px 15px;overflow-x:auto;white-space:pre;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--text)}
+@media (prefers-color-scheme: light){ .cmd{background:rgba(10,20,45,.04)} }
+.copy{position:absolute;top:9px;right:9px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);
+  border-radius:7px;font-size:11.5px;padding:3px 9px;cursor:pointer}
 .copy:hover{color:var(--accent);border-color:var(--accent)}
 .secret{color:var(--warn)}
-
-.modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
-.modal-mask.show{display:flex}
-.modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);
-  width:100%;max-width:560px;padding:26px;max-height:90vh;overflow:auto}
-.modal h3{font-size:16px;margin-bottom:14px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
-@media(max-width:640px){.grid2{grid-template-columns:1fr}.nav{display:none}}
-.check{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text);cursor:pointer}
+.check{display:flex;align-items:center;gap:9px;font-size:14px;cursor:pointer}
 .check input{width:auto}
-.kv{color:var(--muted);font-size:13px}.kv b{color:var(--text);font-weight:600}
+
+/* ================= app shell ================= */
+#app{display:none;min-height:100vh}
+.topbar{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 80%,transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+.topbar-in{max-width:1080px;margin:0 auto;padding:0 20px;height:60px;display:flex;align-items:center;gap:20px}
+.topbar .logo{font-size:16px}
+.nav{display:flex;gap:4px;margin-left:8px}
+.nav button{background:none;border:none;color:var(--muted);font-size:14px;padding:8px 13px;border-radius:9px;cursor:pointer;font-weight:550}
+.nav button:hover{color:var(--text);background:var(--panel2)}
+.nav button.on{color:var(--accent);background:rgba(91,157,255,.13)}
+.spacer{flex:1}
+.who{color:var(--muted);font-size:13.5px}
+.wrapx{max-width:1080px;margin:0 auto;padding:30px 20px 70px}
+.pagehead{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.pagehead h2{font-size:21px;font-weight:750}
+.pane{display:none}.pane.on{display:block}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden;backdrop-filter:blur(12px)}
+th,td{padding:12px 15px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:650;background:var(--panel2);font-size:12.5px;letter-spacing:.3px}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--panel2)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:var(--faint)}
+.dot.on{background:var(--ok);box-shadow:0 0 9px rgba(52,211,153,.7)}
+.modal-mask{position:fixed;inset:0;background:rgba(2,4,10,.62);display:none;align-items:center;justify-content:center;
+  padding:20px;z-index:50;backdrop-filter:blur(6px)}
+.modal-mask.show{display:flex}
+.modal{background:color-mix(in srgb,var(--bg) 88%,#fff 4%);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:0 24px 80px rgba(0,0,0,.5);width:100%;max-width:580px;padding:28px;max-height:90vh;overflow:auto}
+.modal h3{font-size:17px;margin-bottom:6px}
+@media(max-width:640px){.grid2{grid-template-columns:1fr}.nav{display:none}}
+.kv{color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
+<div class="bgfx"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div><div class="grid"></div></div>
 <div id="toasts"></div>
 
-<!-- ============ SETUP WIZARD ============ -->
+<!-- ================= LANDING ================= -->
+<div id="v-landing">
+  <nav class="top" id="landnav"><div class="in">
+    <a class="logo" href="#/">
+      <svg width="26" height="26" viewBox="0 0 32 32"><defs><linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b9dff"/><stop offset="1" stop-color="#8a63ff"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg>
+      MeshBridge
+    </a>
+    <div class="links"><a href="#what">它是什么</a><a href="#features">核心能力</a><a href="#arch">传输架构</a><a href="#how">三步上手</a></div>
+    <div class="sp"></div>
+    <div class="auth">
+      <a class="login-link" id="nl-login">登录</a>
+      <button class="btn slim" id="nl-register">免费注册</button>
+    </div>
+  </div></nav>
+
+  <header class="hero wrap">
+    <div class="pill"><span class="dotp"></span>CONTROL ≠ DATA · 控制面绝不承载你的文件流量</div>
+    <h1>你的设备连成一张网，<br><span class="grad-text">大文件直达，不过手。</span></h1>
+    <p class="sub">MeshBridge 把你散落在家庭、公司、云上的设备组成一张 <b>WireGuard 加密的私有 Mesh 网络</b>，设备之间<b>点对点直传大文件</b>——速度取决于线路本身，而不是某个中转服务器的限速。</p>
+    <div class="cta">
+      <button class="btn" id="hero-register">免费注册，接入设备</button>
+      <button class="btn ghost" id="hero-login">登录控制台</button>
+    </div>
+    <p class="note">注册需邮箱验证码 · 自托管控制面 · 文件数据不经过第三方</p>
+
+    <div class="net">
+      <svg viewBox="0 0 900 380" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="网络拓扑示意">
+        <defs>
+          <linearGradient id="lg2" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#5b9dff"/><stop offset="1" stop-color="#8a63ff"/>
+          </linearGradient>
+        </defs>
+        <line x1="150" y1="300" x2="450" y2="120" stroke="url(#lg2)" stroke-width="2" opacity=".7"/>
+        <line x1="750" y1="300" x2="450" y2="120" stroke="url(#lg2)" stroke-width="2" opacity=".7"/>
+        <line x1="150" y1="300" x2="750" y2="300" stroke="url(#lg2)" stroke-width="3.2" opacity=".95"/>
+        <path d="M450 330 L450 168" stroke="#6d7480" stroke-width="1.6" stroke-dasharray="5 7" opacity=".8"/>
+        <path d="M140 88 L418 108" stroke="#6d7480" stroke-width="1.2" stroke-dasharray="4 7" opacity=".5"/>
+        <circle r="4.5" fill="#5b9dff"><animateMotion dur="2.6s" repeatCount="indefinite" path="M150,300 L750,300"/></circle>
+        <circle r="4.5" fill="#8a63ff"><animateMotion dur="3.4s" begin="1.2s" repeatCount="indefinite" path="M750,300 L150,300"/></circle>
+        <circle r="3.5" fill="#2dd4e8"><animateMotion dur="3.8s" begin=".5s" repeatCount="indefinite" path="M150,300 L450,120 L750,300"/></circle>
+        <circle r="3" fill="#8b94a6"><animateMotion dur="4.5s" repeatCount="indefinite" path="M450,330 L450,168"/></circle>
+        <g font-family="system-ui" text-anchor="middle">
+          <circle cx="150" cy="300" r="34" fill="rgba(91,157,255,.10)" stroke="#5b9dff" stroke-width="1.6"/>
+          <text x="150" y="297" fill="#eceef2" font-size="16">🖥️</text>
+          <text x="150" y="345" fill="#a3aab5" font-size="12">家里 NAS</text>
+          <circle cx="750" cy="300" r="34" fill="rgba(138,99,255,.10)" stroke="#8a63ff" stroke-width="1.6"/>
+          <text x="750" y="297" fill="#eceef2" font-size="16">💻</text>
+          <text x="750" y="345" fill="#a3aab5" font-size="12">海外工作站</text>
+          <circle cx="450" cy="120" r="34" fill="rgba(45,212,232,.08)" stroke="#2dd4e8" stroke-width="1.6"/>
+          <text x="450" y="117" fill="#eceef2" font-size="16">🎮</text>
+          <text x="450" y="165" fill="#a3aab5" font-size="12">笔记本</text>
+          <circle cx="450" cy="352" r="26" fill="rgba(140,160,200,.08)" stroke="#6d7480" stroke-width="1.4" stroke-dasharray="4 4"/>
+          <text x="450" y="349" fill="#a3aab5" font-size="11.5">控制面</text>
+          <text x="450" y="363" fill="#6d7480" font-size="9.5">仅信令 · KB 级</text>
+          <rect x="60" y="66" width="160" height="42" rx="10" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.12)"/>
+          <text x="140" y="84" fill="#a3aab5" font-size="11.5">Headscale 控制器</text>
+          <text x="140" y="99" fill="#6d7480" font-size="9.5">自建 · 密钥分发</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="stats rv">
+      <div class="stat glass"><div class="n">P2P 直连</div><div class="t">设备间 WireGuard 加密</div></div>
+      <div class="stat glass"><div class="n">64 MiB</div><div class="t">分块 + 断点续传</div></div>
+      <div class="stat glass"><div class="n">BLAKE3</div><div class="t">逐块与整体双重校验</div></div>
+      <div class="stat glass"><div class="n">≈ 0</div><div class="t">控制面承载的文件流量</div></div>
+    </div>
+  </header>
+
+  <section class="sec wrap" id="what">
+    <div class="sec-head rv">
+      <div class="kick">它是什么</div>
+      <h2>一台自建服务器，替你管好<span class="grad-text">设备组网与传输</span></h2>
+      <p>家里 NAS 要把 200 GB 素材发给海外的工作站；公司服务器要把数据集同步到云上——网盘又慢又限速还不放心。MeshBridge 在你自己的 VPS 上搭一个轻量控制面，把你的设备组成一张私有网络，传输永远走设备之间。</p>
+    </div>
+    <div class="cards3">
+      <div class="cardx glass rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5b9dff" stroke-width="1.8"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="6" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><circle cx="12" cy="12" r="2.2"/><path d="M6.8 7.4l3.4 3.2M17.2 7.4l-3.4 3.2M6.8 16.6l3.4-3.2M17.2 16.6l-3.4-3.2"/></svg></div>
+        <h3>私有 Mesh 组网</h3>
+        <p>基于 Headscale + Tailscale 的自建控制面：设备装上 Agent 自动入网，拿到的 100.x 地址只在你的网络里可见。准入、密钥、拓扑全部由你掌控。</p>
+        <div class="tagline">WireGuard 加密 · 无第三方</div>
+      </div>
+      <div class="cardx glass rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8a63ff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg></div>
+        <h3>大文件可靠传输</h3>
+        <p>文件按 64 MiB 分块、逐块 BLAKE3 校验、位图断点续传——传一半断网，重连后从断点继续，不用重来。整体哈希验证通过才算完成。</p>
+        <div class="tagline">GB～TB 级 · 可恢复 · 可验证</div>
+      </div>
+      <div class="cardx glass rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2dd4e8" stroke-width="1.8"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
+        <h3>智能路由选择</h3>
+        <p>持续探测设备间路径：能直连就走直连；被网络环境限制时自动切换你部署的中继节点或对象存储兜底。降级需连续多次采样确认，防止抖动误判。</p>
+        <div class="tagline">DIRECT → RELAY → S3 · 自动降级</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="features">
+    <div class="sec-head rv">
+      <div class="kick">核心原则</div>
+      <h2>为什么敢说<span class="grad-text">"数据不过手"</span></h2>
+      <p>MeshBridge 的第一条架构铁律：控制面只做协调（信令、密钥、任务调度），流量只有 KB 级。你的文件永远走设备之间的通道，大文件想蹭 DERP 小水管会被调度器直接拒绝。</p>
+    </div>
+    <div class="arch glass rv" id="arch">
+      <div class="route-row">
+        <div class="node"><div class="b">① 直连 P2P</div><div class="s">首选 · 全速</div></div>
+        <div class="flow"><span class="pct">绝大多数流量 · 设备间点对点</span></div>
+        <div class="node"><div class="b">目标设备</div><div class="s">WireGuard 隧道</div></div>
+      </div>
+      <div class="route-row">
+        <div class="node"><div class="b">② 自建中继</div><div class="s">直连不可用 · 配额内</div></div>
+        <div class="flow"></div>
+        <div class="node"><div class="b">目标设备</div><div class="s">Peer Relay 节点</div></div>
+      </div>
+      <div class="route-row">
+        <div class="node"><div class="b">③ 对象存储</div><div class="s">异步兜底 · 分块上传</div></div>
+        <div class="flow"></div>
+        <div class="node"><div class="b">目标设备</div><div class="s">拉取 + 校验</div></div>
+      </div>
+      <div class="route-row dead">
+        <div class="node"><div class="b">✗ DERP 小水管</div><div class="s">仅 ≤100 MiB 小文件允许</div></div>
+        <div class="flow"></div>
+        <div class="node"><div class="b">大文件拒绝</div><div class="s">调度器强制拦截</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="how">
+    <div class="sec-head rv">
+      <div class="kick">三步上手</div>
+      <h2>从注册到传输，<span class="grad-text">十分钟内</span></h2>
+    </div>
+    <div class="steps3">
+      <div class="step glass rv"><div class="num">1</div><h3>注册账号</h3><p>邮箱验证码注册，全程网页操作。首次部署会引导你配置邮件服务，之后可邀请团队按项目隔离设备。</p></div>
+      <div class="step glass rv"><div class="num">2</div><h3>接入设备</h3><p>控制台生成一条安装命令，在 NAS / 服务器 / 工作站上粘贴执行：自动安装 Tailscale 入网 + MeshBridge Agent 心跳上线。</p></div>
+      <div class="step glass rv"><div class="num">3</div><h3>发起传输</h3><p>选源设备、目标设备和路径即可建任务。调度器自动选最优路由，断点续传，全程网页可查进度与审计。</p></div>
+    </div>
+  </section>
+
+  <div class="finale wrap rv">
+    <h2>把互联网上你的设备，<br>连成<span class="grad-text">一张自己的网</span>。</h2>
+    <p>免费注册 · 邮箱验证 · 一条命令接入设备</p>
+    <button class="btn" id="end-register" style="padding:16px 40px;font-size:16px">开始使用 MeshBridge</button>
+  </div>
+
+  <footer><div class="in">
+    <span>MeshBridge · CONTROL ≠ DATA</span><span class="sp"></span>
+    <span>自托管 · SQLite 单文件存储 · Go 单二进制</span>
+  </div></footer>
+</div>
+
+<!-- ================= SETUP ================= -->
 <div id="v-setup" class="center" style="display:none">
-  <div class="card wide">
-    <div class="brand"><div class="mark"></div><h1>MeshBridge 初始部署</h1></div>
+  <a class="back-home" href="#/">← 返回首页</a>
+  <div class="card wide glass">
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>初始部署向导</h1></div>
     <p class="sub">三步完成控制面引导：管理员账号 → 邮件服务 → 设备接入</p>
     <div class="steps" id="s-steps"><span class="on"></span><span></span><span></span></div>
 
     <div id="s1">
-      <h2>创建管理员账号</h2>
+      <h2 class="pt">创建管理员账号</h2>
       <p class="sub" style="margin-bottom:8px">使用邮箱注册，需邮箱验证码确认。</p>
       <div class="field"><label>邮箱</label>
         <div class="row"><input id="s1-email" type="email" placeholder="you@example.com" autocomplete="email">
@@ -170,7 +439,7 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
     </div>
 
     <div id="s2" style="display:none">
-      <h2>邮件服务（SMTP）</h2>
+      <h2 class="pt">邮件服务（SMTP）</h2>
       <p class="sub" style="margin-bottom:8px">用于注册/找回密码的验证码发信。QQ 邮箱：smtp.qq.com，端口 465，密码为授权码。</p>
       <div class="grid2">
         <div class="field"><label>SMTP 主机</label><input id="s2-host" placeholder="smtp.qq.com" value="smtp.qq.com"></div>
@@ -190,7 +459,7 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
     </div>
 
     <div id="s3" style="display:none">
-      <h2>接入第一台设备</h2>
+      <h2 class="pt">接入第一台设备</h2>
       <p class="sub" style="margin-bottom:8px">为设备生成 Tailscale 入网密钥与 Agent 令牌（仅显示一次）。</p>
       <div class="field"><label>设备主机名</label>
         <div class="row"><input id="s3-host" placeholder="my-laptop">
@@ -213,24 +482,26 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
   </div>
 </div>
 
-<!-- ============ LOGIN ============ -->
+<!-- ================= LOGIN ================= -->
 <div id="v-login" class="center" style="display:none">
-  <div class="card">
-    <div class="brand"><div class="mark"></div><h1>MeshBridge</h1></div>
+  <a class="back-home" href="#/">← 返回首页</a>
+  <div class="card glass">
+    <div class="brand"><svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>MeshBridge</h1></div>
     <p class="sub">私有设备组网 · 大文件传输编排</p>
     <div class="field"><label>邮箱或用户名</label><input id="l-user" autocomplete="username" placeholder="you@example.com"></div>
     <div class="field"><label>密码</label><input id="l-pass" type="password" autocomplete="current-password" placeholder="••••••••••••"></div>
     <div class="banner" id="l-err"></div>
     <button class="btn" id="l-go">登录</button>
-    <p class="footnote"><a href="#/forgot">忘记密码</a> · <a href="#/register">注册账号</a></p>
+    <p class="footnote"><a id="go-forgot">忘记密码</a> · <a id="go-register">注册账号</a></p>
   </div>
 </div>
 
-<!-- ============ REGISTER ============ -->
+<!-- ================= REGISTER ================= -->
 <div id="v-register" class="center" style="display:none">
-  <div class="card">
-    <div class="brand"><div class="mark"></div><h1>注册账号</h1></div>
-    <p class="sub">邮箱验证后即可使用控制台</p>
+  <a class="back-home" href="#/">← 返回首页</a>
+  <div class="card glass">
+    <div class="brand"><svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>注册账号</h1></div>
+    <p class="sub">邮箱验证后即可接入你的设备</p>
     <div class="field"><label>邮箱</label>
       <div class="row"><input id="r-email" type="email" placeholder="you@example.com">
       <button class="btn ghost slim" style="flex:none" id="r-send">发送验证码</button></div>
@@ -243,14 +514,15 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
     </div>
     <div class="banner" id="r-err"></div>
     <button class="btn" id="r-go">注册</button>
-    <p class="footnote"><a href="#/login">返回登录</a></p>
+    <p class="footnote"><a id="back-login1">返回登录</a></p>
   </div>
 </div>
 
-<!-- ============ FORGOT ============ -->
+<!-- ================= FORGOT ================= -->
 <div id="v-forgot" class="center" style="display:none">
-  <div class="card">
-    <div class="brand"><div class="mark"></div><h1>重置密码</h1></div>
+  <a class="back-home" href="#/">← 返回首页</a>
+  <div class="card glass">
+    <div class="brand"><svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg><h1>重置密码</h1></div>
     <p class="sub">输入注册邮箱接收验证码</p>
     <div class="field"><label>邮箱</label>
       <div class="row"><input id="f-email" type="email" placeholder="you@example.com">
@@ -261,14 +533,14 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
     <div class="field"><label>新密码（≥12 位）</label><input id="f-pass" type="password" placeholder="••••••••••••"></div>
     <div class="banner" id="f-err"></div>
     <button class="btn" id="f-go">重置密码</button>
-    <p class="footnote"><a href="#/login">返回登录</a></p>
+    <p class="footnote"><a id="back-login2">返回登录</a></p>
   </div>
 </div>
 
-<!-- ============ APP ============ -->
+<!-- ================= APP ================= -->
 <div id="app">
   <div class="topbar"><div class="topbar-in">
-    <div class="brand"><div class="mark"></div><h1>MeshBridge</h1></div>
+    <a class="logo" href="#/"><svg width="24" height="24" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg1)"/><circle cx="9" cy="22" r="3" fill="#fff"/><circle cx="23" cy="22" r="3" fill="#fff"/><circle cx="16" cy="9" r="3" fill="#fff"/><path d="M9 22L16 9l7 13M9 22h14" stroke="#fff" stroke-width="1.8" fill="none" opacity=".85"/></svg>MeshBridge</a>
     <nav class="nav" id="tabs">
       <button data-t="devices" class="on">设备</button>
       <button data-t="transfers">传输</button>
@@ -280,7 +552,7 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
     <span class="who" id="who"></span>
     <button class="btn ghost slim" id="logout">退出</button>
   </div></div>
-  <div class="wrap">
+  <div class="wrapx">
     <section class="pane on" id="p-devices">
       <div class="pagehead"><h2>设备</h2><div class="spacer"></div>
         <button class="btn slim" id="add-device">接入设备</button></div>
@@ -305,9 +577,9 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
     </section>
     <section class="pane" id="p-settings">
       <div class="pagehead"><h2>设置</h2></div>
-      <div class="card wide" style="box-shadow:none">
-        <h2>邮件服务（SMTP）</h2>
-        <p class="sub" style="margin-bottom:8px">修改后点击“保存并发测试邮件”验证。</p>
+      <div class="card wide glass" style="box-shadow:none;padding:28px">
+        <h2 class="pt">邮件服务（SMTP）</h2>
+        <p class="sub" style="margin-bottom:8px">修改后点击"保存并发测试邮件"验证。</p>
         <div class="grid2">
           <div class="field"><label>SMTP 主机</label><input id="set-host" placeholder="smtp.qq.com"></div>
           <div class="field"><label>端口</label>
@@ -336,7 +608,7 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
 <div class="modal-mask" id="m-enroll">
   <div class="modal">
     <h3>接入设备</h3>
-    <p class="sub" style="margin:-6px 0 12px">生成 Tailscale 入网密钥 + Agent 令牌，仅显示一次。</p>
+    <p class="sub" style="margin:-2px 0 12px">生成 Tailscale 入网密钥 + Agent 令牌，仅显示一次。</p>
     <div class="field"><label>设备主机名</label>
       <div class="row"><input id="e-host" placeholder="node-bj-01">
       <button class="btn ghost slim" style="flex:none" id="e-gen">生成</button></div>
@@ -350,9 +622,7 @@ tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
       <div class="field"><label>③ 在目标机执行</label>
         <div class="cmd"><span class="mono" id="e-cmd"></span><button class="copy" data-cp="e-cmd">复制</button></div></div>
     </div>
-    <div class="row" style="margin-top:16px">
-      <button class="btn ghost" id="e-close">关闭</button>
-    </div>
+    <div class="row" style="margin-top:16px"><button class="btn ghost" id="e-close">关闭</button></div>
   </div>
 </div>
 
@@ -469,19 +739,29 @@ function tableRows(tbodyId, rows, cells){
 }
 function statusDot(on){
   const s = document.createElement("span");
-  s.innerHTML = ""; const d = document.createElement("span");
+  const d = document.createElement("span");
   d.className = "dot" + (on ? " on" : "");
   s.appendChild(d); s.appendChild(document.createTextNode(on ? "在线" : "离线"));
   return s;
 }
 
+/* ---------- landing interactions ---------- */
+window.addEventListener("scroll", ()=>{
+  const nav = $("landnav");
+  if (nav) nav.classList.toggle("scrolled", window.scrollY > 24);
+}, { passive: true });
+const io = ("IntersectionObserver" in window) ? new IntersectionObserver(es=>{
+  for (const e of es) if (e.isIntersecting){ e.target.classList.add("vis"); io.unobserve(e.target); }
+}, { threshold: .12 }) : null;
+document.querySelectorAll(".rv").forEach(el=>{ io ? io.observe(el) : el.classList.add("vis"); });
+
 /* ---------- router ---------- */
-const views = ["v-setup","v-login","v-register","v-forgot"];
+const views = ["v-landing","v-setup","v-login","v-register","v-forgot"];
 function show(id){
   for (const v of views) $(v).style.display = "none";
   $("app").style.display = "none";
   if (id === "app") $("app").style.display = "block";
-  else if ($(id)) $(id).style.display = "flex";
+  else if ($(id)) $(id).style.display = "block";
 }
 async function route(){
   // canonicalize deep links (/register) to hash routes (#/register)
@@ -494,22 +774,39 @@ async function route(){
     const st = await api("GET","/api/v1/setup/status",null,false);
     if (st.setup_required && h !== "#/setup"){ location.hash = "#/setup"; return; }
     if (h === "#/setup"){
-      if (!st.setup_required){ location.hash = "#/login"; return; }
+      if (!st.setup_required){ location.hash = "#/"; return; }
       show("v-setup"); return;
     }
+    let me = null;
     if (token()){
-      try{ await api("GET","/api/v1/me"); }catch(_){ setToken(""); if (h !== "#/login"){ location.hash = "#/login"; return; } }
+      try{ me = await api("GET","/api/v1/me"); }catch(_){ setToken(""); me = null; }
     }
     switch(h){
       case "#/register": show("v-register"); return;
-      case "#/forgot": show("v-forgot"); return;
-      case "#/login": show("v-login"); return;
-      default:
-        if (token()){ show("app"); enterApp(); } else show("v-login");
+      case "#/forgot":   show("v-forgot"); return;
+      case "#/login":    if (me){ show("app"); enterApp(me); } else show("v-login"); return;
+      case "#/app":
+        if (!me){ location.hash = "#/login"; return; }
+        show("app"); enterApp(me); return;
+      default:           /* #/ → landing or console */
+        if (me){ show("app"); enterApp(me); } else show("v-landing");
     }
-  }catch(e){ show("v-login"); }
+  }catch(e){ show("v-landing"); }
 }
 window.addEventListener("hashchange", route);
+
+/* landing buttons */
+function goRegister(){ location.hash = "#/register"; }
+function goLogin(){ location.hash = "#/login"; }
+$("nl-register").addEventListener("click", goRegister);
+$("hero-register").addEventListener("click", goRegister);
+$("end-register").addEventListener("click", goRegister);
+$("nl-login").addEventListener("click", goLogin);
+$("hero-login").addEventListener("click", goLogin);
+$("go-register").addEventListener("click", goRegister);
+$("go-forgot").addEventListener("click", ()=>{ location.hash = "#/forgot"; });
+$("back-login1").addEventListener("click", goLogin);
+$("back-login2").addEventListener("click", goLogin);
 
 /* ---------- setup wizard ---------- */
 bindSend("s1-send","s1-cd","s1-email","setup","s1-err");
@@ -627,23 +924,20 @@ $("tabs").addEventListener("click", e=>{
 });
 $("logout").addEventListener("click", async ()=>{
   try{ await api("POST","/api/v1/auth/logout"); }catch(_){}
-  setToken(""); location.hash = "#/login";
+  setToken(""); location.hash = "#/";
 });
-async function enterApp(){
-  try{
-    const me = await api("GET","/api/v1/me");
-    $("who").textContent = me.username + (me.role === "admin" ? " · 管理员" : "");
-    loadTab();
-    if (me.role === "admin"){
-      const d = await api("GET","/api/v1/setup/smtp");
-      fillSmtp("set-host","set-port","set-user","set-pass","set-from", d);
-      $("set-pass").placeholder = d.configured ? "已保存（留空不修改）" : "未配置";
-      const st = await api("GET","/api/v1/setup/status");
-      $("set-openreg").checked = !!st.allow_registration;
-    } else {
-      $("tabs").querySelector('[data-t="settings"]').style.display = "none";
-    }
-  }catch(err){ setToken(""); location.hash = "#/login"; }
+async function enterApp(me){
+  $("who").textContent = me.username + (me.role === "admin" ? " · 管理员" : "");
+  loadTab();
+  if (me.role === "admin"){
+    const d = await api("GET","/api/v1/setup/smtp");
+    fillSmtp("set-host","set-port","set-user","set-pass","set-from", d);
+    $("set-pass").placeholder = d.configured ? "已保存（留空不修改）" : "未配置";
+    const st = await api("GET","/api/v1/setup/status");
+    $("set-openreg").checked = !!st.allow_registration;
+  } else {
+    $("tabs").querySelector('[data-t="settings"]').style.display = "none";
+  }
 }
 function loadTab(){
   if (curTab === "devices") loadDevices();
@@ -707,7 +1001,7 @@ $("set-test").addEventListener("click", async ()=>{
   try{
     const p = smtpPayload("set-host","set-port","set-user","set-pass","set-from");
     if (p.host && p.password) await api("POST","/api/v1/setup/smtp", p);
-    else if (p.host){ // save without password change
+    else if (p.host){
       delete p.password; await api("POST","/api/v1/setup/smtp", p);
     }
     await api("POST","/api/v1/setup/smtp/test",{});
