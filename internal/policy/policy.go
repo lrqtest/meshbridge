@@ -29,6 +29,9 @@ type Input struct {
 	// projectSlug -> member tags (already computed: tag:project-<slug> per device)
 	Devices []Device
 	Relays  []Relay
+	// OwnerUser is the headscale username (with "@") that owns all tags.
+	// Headscale 0.29 rejects "autogroup:admin" (Tailscale SaaS-only syntax).
+	OwnerUser string
 }
 
 type Relay struct {
@@ -61,14 +64,21 @@ func Render(in Input) Policy {
 		TagOwn: map[string][]string{},
 		Grants: []Grant{},
 	}
-	// tagOwners: admin owns everything (MVP: autogroup:admin).
-	p.TagOwn["tag:admin-device"] = []string{"autogroup:admin"}
+	// tagOwners: admin user owns everything (Headscale requires "user@" format).
+	owner := in.OwnerUser
+	if owner == "" {
+		owner = "admin@"
+	}
+	if !strings.HasSuffix(owner, "@") {
+		owner += "@"
+	}
+	p.TagOwn["tag:admin-device"] = []string{owner}
 	slugs := []string{}
 	for _, pr := range in.Projects {
 		slugs = append(slugs, pr.Slug)
-		p.TagOwn["tag:project-"+pr.Slug] = []string{"autogroup:admin"}
-		p.TagOwn["tag:role-dev"] = []string{"autogroup:admin"}
-		p.TagOwn["tag:role-prod"] = []string{"autogroup:admin"}
+		p.TagOwn["tag:project-"+pr.Slug] = []string{owner}
+		p.TagOwn["tag:role-dev"] = []string{owner}
+		p.TagOwn["tag:role-prod"] = []string{owner}
 	}
 	sort.Strings(slugs)
 	for _, slug := range slugs {

@@ -1,12 +1,12 @@
 {
   "groups": {},
   "tagOwners": {
-    "tag:admin-device": ["autogroup:admin"],
-    "tag:project-alpha": ["autogroup:admin"],
-    "tag:role-dev": ["autogroup:admin"],
-    "tag:role-prod": ["autogroup:admin"],
-    "tag:relay": ["autogroup:admin"],
-    "tag:relay-jp": ["autogroup:admin"]
+    "tag:admin-device": ["admin@"],
+    "tag:project-alpha": ["admin@"],
+    "tag:role-dev": ["admin@"],
+    "tag:role-prod": ["admin@"],
+    "tag:relay": ["admin@"],
+    "tag:relay-jp": ["admin@"]
   },
   "hosts": {},
   "grants": [

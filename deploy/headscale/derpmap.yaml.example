@@ -1,0 +1,13 @@
+# Placeholder DERP map (YAML, lowercase keys — NOT the PascalCase JSON of derp.urls).
+# Headscale 0.29 refuses to start with an empty DERP map; an unresolvable
+# placeholder region keeps the tailnet effectively DERP-free until Phase 8
+# replaces it with a self-hosted derper on a Relay VPS.
+regions:
+  900:
+    regionid: 900
+    regioncode: mb-placeholder
+    regionname: MeshBridge No-DERP Placeholder
+    nodes:
+      - name: 900mbph
+        regionid: 900
+        hostname: derp-disabled.placeholder.invalid

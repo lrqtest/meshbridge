@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -117,7 +118,7 @@ func runCreateAdmin(database *sql.DB, username string) error {
 		password = string(b1)
 	} else {
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
+		if err != nil && (err != io.EOF || strings.TrimSpace(line) == "") {
 			return err
 		}
 		password = strings.TrimSpace(line)

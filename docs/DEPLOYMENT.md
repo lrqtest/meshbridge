@@ -36,7 +36,7 @@ Caddy 自动 HTTPS; Headscale 反代需支持 WebSocket (默认即支持, 部署
 ```bash
 sudo cp deploy/headscale/config.yaml.example /etc/headscale/config.yaml
 # edit server_url, base_domain; 确认 derp.server.enabled=false
-sudo headscale config check
+sudo headscale configtest
 sudo systemctl enable --now headscale
 sudo headscale users create admin
 sudo headscale apikey create   # → 写入 /etc/meshbridge/server.env (0600), 绝不进Git/日志

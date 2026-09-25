@@ -1,5 +1,5 @@
 # config.yaml.example for Headscale v0.29.4 — copy to /etc/headscale/config.yaml
-# MUST validate with `headscale config check` before restart.
+# MUST validate with `headscale configtest` before restart (0.29 renamed it from "config check").
 server_url: https://hs.example.com
 listen_addr: 127.0.0.1:8080
 metrics_listen_addr: 127.0.0.1:9090
@@ -13,9 +13,14 @@ derp:
   server:
     # CONTROL VPS MUST NOT relay normal big files: keep embedded DERP disabled.
     enabled: false
+  # Headscale 0.29 REFUSES to start with an empty DERP map. Since embedded DERP
+  # is disabled, point paths at a placeholder map (or your own derper later).
+  # NOTE: files under paths are YAML with lowercase keys (regions/regionid/...),
+  # NOT the PascalCase JSON used by derp.urls. See deploy/headscale/derpmap.yaml.example.
   urls: []
-  paths: []
-  auto_update_enabled: true
+  paths:
+    - /etc/headscale/derpmap.yaml
+  auto_update_enabled: false
   update_frequency: 24h
 database:
   type: sqlite

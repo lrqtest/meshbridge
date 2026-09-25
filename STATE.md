@@ -32,10 +32,31 @@
 - [x] Deploy: Caddyfile, headscale config/policy, systemd (sandboxed), Ansible roles, install/backup/restore/smoke 脚本
 - [x] Docs: ARCHITECTURE/SECURITY/THREAT-MODEL/TRANSFER/RELAY/DEPLOYMENT/OPERATIONS/TEST-PLAN/TROUBLESHOOTING/BACKUP 等
 - [x] `go test ./...` + `go vet` 本地通过
+- [x] **2026-09-25 全面安全审计 + 修复 (commit 850bf0c)**: 见下方 Audit 2026-09-25
+
+## Audit 2026-09-25 (全源码人工审计, 已修复并测试)
+
+发现并修复 (commit 850bf0c):
+1. **[严重-功能] Agent↔Server 从未联调**: agent 心跳打 `/api/v1/agents/heartbeat` 但 server 没注册该路由 (恒 404)。已加心跳路由 + device_tokens 表 + `POST /api/v1/devices` (管理员注册设备、一次性发 agent token), heartbeat upsert agents 表 + 120s 离线清扫。
+2. **[严重-安全] Web UI 存储型 XSS**: hostname/错误串经 innerHTML 渲染, 恶意设备名可偷管理页里的 API token。已改 textContent。
+3. **[高-安全] 登录无防爆破 + 用户名枚举**: 加 per-IP(信任 loopback XFF)+per-username 限速 (5次/15min→429); 未知用户走 DummyVerify 等时 Argon2 消耗。
+4. **[高-安全] API token 永不过期/不可吊销**: 登录 token 24h 过期 (expires_at), 加 `/api/v1/auth/logout`。
+5. **[高-安全] install-control.sh SSH 硬化无效**: OpenSSH 首值优先, 追加到主配置末尾会输给已有指令。改 `sshd_config.d/00-*.conf` drop-in + `sshd -t` 校验后才 reload; ufw 先探测实际 SSH 端口再 reset (防锁死)。
+6. **[中-安全] Transfer token nonce 无重放检测**: VerifyTransfer 只查非空。新增 auth.ReplayGuard (GC + TTL), 接收端调用 CheckAndConsume。
+7. **[中-安全] 传输创建无路径校验**: API 层拒绝绝对路径/`..`/盘符/src==dst; 权威校验仍在 agent 侧 SafeJoin。
+8. **[中-可靠] Finalize 无 fsync**: rename 前后 fsync 文件+目录, 掉电不再产出已命名但空洞的"完成"文件。
+9. **[中] Argon2 参数不解析**: 改为从 PHC 串解析 m/t/p + 合理性上限 (防篡改行放大计算)。
+10. **[低] 其他**: relays/audit GET-only 守卫; slugify 去重 (api→policy.Slugify); agent 复用 http.Client; server `--create-admin` 引导 (TTY 双次输入或 stdin, ≥12字符); /health 反映真实 headscale 可达性; Caddyfile headscale 块改官方推荐的裸 reverse_proxy (去掉 h2c transport); backup.sh 仅 age 加密时含 /etc/meshbridge secrets 并加警告。
+
+已知未修 (记录在案, MVP 可接受):
+- transfer 执行器 (chunk 收发循环) 尚未在 agent main 里接线 (Phase 2 集成范围)
+- probe ClassifyStatusJSON 匹配 peer 用 hostname 子串, 精确 key 匹配待 headscale 实测后定
+- Web UI 无 CSP header (Caddy 层后续可加)
+- policy Render 中 role-dev/role-prod tagOwner 循环内重复赋值 (无害)
 
 ## In Progress
 
-- 无 (等 SSH + 域名 + S3 凭证做真实部署验证)
+- **真实部署 Phase 1 (进行中)**: 服务器 36.151.144.201 (公) / 172.16.0.3 (内), 域名 mineai.top (裸域 A 记录已生效; **hs./mesh. 子域名 A 记录待用户添加**)。SSH: agent.pem 对 12 个常见用户名均被拒 (公钥已签名提交 SHA256:rKVGpzJ15A0kGjl+okSvqDDF5TroObEf/Nzobibqb7Y 但服务器 authorized_keys 不认) → 用户正在重启服务器重试。部署物料已备: /tmp/mesh-deploy/{linux-amd64,linux-arm64}(3 binary×2 arch+SHA256SUMS), configs/{Caddyfile, Caddyfile.single-domain(裸域路径复用备选), headscale-config.yaml}。
 
 ## Blocked / 需要用户提供的最后一步
 
@@ -60,13 +81,35 @@
 - **Route flap 阻尼**: 单次 DERP 样本不暂停; 连续 2-3 次 (15s+jitter) + remaining > derp_limit 才 PAUSE 并重调度.
 - **No remote shell in agent**: 远程管理走 SSH over Tailscale (OpenSSH), agent 第一版无任意命令执行.
 
-## Deployment State
+## Deployment State (2026-09-26 更新)
+
+- **Control VPS 36.151.144.201 (Debian 12, x86_64, 2C/4G/59G): 已部署并验证**
+  - SSH: root + agent.pem (key-only; 密码登录已禁用, MaxAuthTries 4, ufw 仅 22/80/443)
+  - Headscale **v0.29.4** 运行中 (127.0.0.1:8080, SQLite, embedded DERP **disabled** + 占位 DERP map)
+  - Caddy **2.11.4** (Let's Encrypt 已签发), **单域名方案**: `https://mineai.top` — meshbridge API 路径优先分流到 :8081, 其余 (含 /key /ts2021 /register /machine) → headscale (hs./mesh. 子域名 A 记录待用户添加后可切换标准双子域名布局, Caddyfile 已备)
+  - meshbridge-server (systemd, meshbridge 用户, sandboxed) 运行中; 管理员 `mb-admin` (密码在服务器 /root/meshbridge-admin-credentials.txt, 0600, 未进 Git/日志)
+  - headscale API key 已入 /etc/meshbridge/server.env (640 root:meshbridge)
+  - **端到端验证 8/8 通过**: login→token / 5次错密→429 / 设备注册+一次性 agent token / heartbeat→online / 绝对路径+`..`→400 / audit 记录 / logout→401 / 内外网 HTTPS 一致
+  - headscale preauthkey (1h reusable) 在 /root/mb-preauth.key — 曾在本会话输出中完整出现, **过期前不要外传; 建议测试前 expire**
+- 入网测试: 待用户提供 CN/US 测试机 (本机无 Tailscale); preauthkey 就绪
+- Relays: 未采购/未部署 (Phase 8); S3: 未配置
+
+### 部署实测发现的 Headscale 0.29.4 版本漂移 (已回写仓库)
+
+1. `headscale config check` 已改名 **`headscale configtest`**
+2. **空 DERP map 拒绝启动** ("initial DERPMap is empty") — 与"禁用 embedded DERP"直接冲突; 用占位 DERP map (不可解析域名) 满足非空要求, 保持 tailnet 无 DERP fallback (符合 scheduler 语义: 转 WAITING/S3)
+3. `derp.paths` 文件是 **YAML 小写字段名** (regions/regionid/hostname), 不是 urls 用的 PascalCase JSON — 写错则静默解析为空 map
+4. policy tagOwners **不认 `autogroup:admin`** (Tailscale SaaS 专有), 必须用具体用户 `user@` 格式 (如 `mb-admin@`); policy.go 已改 Input.OwnerUser
+5. `preauthkeys create --user` 要**数字 user ID**, 不是用户名
+
+## Deployment State (旧)
 
 - Control VPS: NOT DEPLOYED (待 SSH)
 - Headscale: config/policy 模板就绪, 未 apply
 - Relays: 未采购/未部署
 - S3: 未配置
 - Web/CLI/API: 代码完成, 未联调
+(以上为旧状态, 最新见上方 Deployment State 2026-09-26)
 
 ## Known Issues / Risks
 
@@ -78,7 +121,8 @@
 
 ## Next Actions
 
-1. 用户提供 SSH + 域名 → 跑 `deploy/ansible` (control role) → `headscale config check` → enroll 2 台测试机 → smoke-test.sh (1GB→10GB Direct/resume/DERP-refuse).
-2. 采购 JP relay → `install-relay.sh` + grant `tailscale.com/cap/relay` → Peer Relay 10GB 测试 (relay vnStat ↑, control VPS ≈ MB 级).
-3. 配置 S3 profile → S3 fallback 测试 (upload/retry/download/hash).
-4. Backup/restore 实测 → Phase 12 security review → 生产 runbook.
+1. ✅ Control VPS 部署完成 (见 Deployment State) — 待用户提供 CN/US 测试机做 enroll + smoke-test (1GB→10GB Direct/resume/DERP-refuse). enroll: `tailscale up --login-server https://mineai.top --hostname <name> --authkey <preauth>`, 再用管理员 token 调 `POST /api/v1/devices` 拿 agent token.
+2. 用户添加 hs.mineai.top / mesh.mineai.top A 记录后可切标准双子域名 Caddyfile (configs 已备于服务器).
+3. 采购 JP relay → `install-relay.sh` + grant `tailscale.com/cap/relay` → Peer Relay 10GB 测试 (relay vnStat ↑, control VPS ≈ MB 级).
+4. 配置 S3 profile → S3 fallback 测试 (upload/retry/download/hash).
+5. Backup/restore 实测 → Phase 12 security review → 生产 runbook.
