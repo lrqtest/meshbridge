@@ -53,6 +53,12 @@ func FromEnv() Config {
 		c.HeadscaleURL = v
 	}
 	c.HeadscaleAPIKey = os.Getenv("MESH_HEADSCALE_API_KEY")
+	if v := os.Getenv("MESH_MASTER_KEY_PATH"); v != "" {
+		c.MasterKeyPath = v
+	}
+	if v := os.Getenv("MESH_BASE_URL"); v != "" {
+		_ = v // read again in main; kept here for config completeness
+	}
 	if v := os.Getenv("MESH_DERP_LIMIT_BYTES"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
 			c.DerpLimitBytes = n

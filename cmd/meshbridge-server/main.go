@@ -5,13 +5,18 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
+	"embed"
 	"flag"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,13 +26,17 @@ import (
 	"github.com/meshbridge/meshbridge/internal/config"
 	"github.com/meshbridge/meshbridge/internal/db"
 	"github.com/meshbridge/meshbridge/internal/headscale"
+	"github.com/meshbridge/meshbridge/internal/mailer"
+	"github.com/meshbridge/meshbridge/internal/secret"
+	"github.com/meshbridge/meshbridge/internal/settings"
 	"golang.org/x/term"
 )
 
 func main() {
 	var (
 		dataDir     = flag.String("data-dir", "", "override data dir (sqlite lives here)")
-		schema      = flag.String("schema", "migrations/001_init.sql", "schema file")
+		schema      = flag.String("schema", "migrations/001_init.sql", "schema file (single-file fallback)")
+		migrations  = flag.String("migrations", "migrations", "migrations directory (all .sql, lexical order)")
 		listen      = flag.String("listen", "", "override listen addr")
 		derpWarn    = flag.Bool("derp-check", true, "warn if embedded DERP appears enabled")
 		createAdmin = flag.String("create-admin", "", "create admin user (name), password via stdin; then exit")
@@ -55,16 +64,26 @@ func main() {
 		}
 	}
 	dbPath := filepath.Join(cfg.DataDir, "meshbridge.sqlite")
-	database, err := db.Open(dbPath, *schema)
+	database, err := db.Open(dbPath, "")
 	if err != nil {
-		// try relative to repo root
-		alt := filepath.Join("..", "..", *schema)
-		database, err = db.Open(dbPath, alt)
-		if err != nil {
-			log.Fatalf("open db: %v", err)
-		}
+		log.Fatalf("open db: %v", err)
 	}
 	defer database.Close()
+	// Migrations: prefer the directory (001+002+…); fall back to a single
+	// schema file when the dir is missing (e.g. stripped installs).
+	if _, err := os.Stat(*migrations); err == nil {
+		if err := db.RunMigrations(database, *migrations); err != nil {
+			log.Fatalf("migrations: %v", err)
+		}
+	} else {
+		raw, rerr := os.ReadFile(*schema)
+		if rerr != nil {
+			log.Fatalf("read schema: %v", rerr)
+		}
+		if _, err := database.Exec(string(raw)); err != nil {
+			log.Fatalf("schema: %v", err)
+		}
+	}
 
 	if *createAdmin != "" {
 		if err := runCreateAdmin(database, *createAdmin); err != nil {
@@ -74,15 +93,48 @@ func main() {
 	}
 
 	srv := api.New(database)
+	srv.BaseURL = os.Getenv("MESH_BASE_URL")
+	// Master key unlocks secret encryption (SMTP passwords, …). Without it the
+	// web onboarding mail features stay disabled (log once, keep serving API).
+	if mk, err := secret.LoadKey(cfg.MasterKeyPath); err == nil {
+		srv.MasterKey = mk
+		srv.Mailer = &mailer.Service{
+			DB: database,
+			Config: func() mailer.Config {
+				host, _ := settings.Get(database, "smtp_host")
+				portS, _ := settings.Get(database, "smtp_port")
+				user, _ := settings.Get(database, "smtp_username")
+				from, _ := settings.Get(database, "smtp_from")
+				enc, _ := settings.Get(database, "smtp_password_enc")
+				pw, _ := secret.Decrypt(mk, enc)
+				port, _ := strconv.Atoi(portS)
+				return mailer.Config{Host: host, Port: port, Username: user, Password: pw, From: from}
+			},
+			Secret: func() string { return hex.EncodeToString(mk) },
+			Limits: func() mailer.Limits {
+				return mailer.Limits{
+					CooldownSeconds: atoiOr(settings.GetDefault(database, "mail_code_cooldown_seconds", "60"), 60),
+					ExpireMinutes:   atoiOr(settings.GetDefault(database, "mail_code_expire_minutes", "15"), 15),
+					MinuteLimit:     atoiOr(settings.GetDefault(database, "mail_code_minute_limit", "5"), 5),
+					DailyLimit:      atoiOr(settings.GetDefault(database, "mail_code_daily_limit", "100"), 100),
+				}
+			},
+		}
+	} else {
+		log.Printf("WARN: master key unavailable (%v) — SMTP/web onboarding disabled", err)
+	}
 	// Health reflects real Headscale reachability when an API key is present.
 	if cfg.HeadscaleURL != "" {
 		hs := headscale.New(cfg.HeadscaleURL, cfg.HeadscaleAPIKey)
+		srv.HS = hs
 		srv.HSOK = func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			return hs.Health(ctx) == nil
 		}
 	}
+	// Web UI from the embedded filesystem, SPA fallback to index.html.
+	srv.Mux.Handle("/", webHandler())
 	httpSrv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           srv.Mux,
@@ -90,6 +142,41 @@ func main() {
 	}
 	log.Printf("meshbridge-server listening on %s (data=%s)", cfg.ListenAddr, cfg.DataDir)
 	log.Fatal(httpSrv.ListenAndServe())
+}
+
+func atoiOr(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil && n > 0 {
+		return n
+	}
+	return def
+}
+
+//go:embed all:web
+var webFS embed.FS
+
+func webHandler() http.Handler {
+	sub, err := fs.Sub(webFS, "web")
+	if err != nil {
+		log.Fatalf("embed web: %v", err)
+	}
+	fileServer := http.FileServer(http.FS(sub))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(r.URL.Path, "/")
+		if p == "" {
+			p = "index.html"
+		}
+		if _, err := fs.Stat(sub, p); err != nil {
+			// SPA route → serve the shell
+			r2 := new(http.Request)
+			*r2 = *r
+			r2.URL = new(url.URL)
+			*r2.URL = *r.URL
+			r2.URL.Path = "/"
+			fileServer.ServeHTTP(w, r2)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // runCreateAdmin reads the password from a TTY (twice, no echo) or stdin pipe

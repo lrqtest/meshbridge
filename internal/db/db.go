@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -45,6 +46,78 @@ func Open(path, schemaFile string) (*sql.DB, error) {
 		}
 	}
 	return sqlDB, nil
+}
+
+// RunMigrations executes every .sql file in dir in lexical order, statement by
+// statement. ALTER TABLE statements that fail with "duplicate column" are
+// skipped, which makes re-runs against an already-migrated database safe.
+func RunMigrations(sqlDB *sql.DB, dir string) error {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".sql" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return fmt.Errorf("%s: %w", e.Name(), err)
+		}
+		for _, stmt := range SplitStatements(string(raw)) {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := sqlDB.Exec(stmt); err != nil {
+				// Idempotence: adding a column that already exists is fine.
+				if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(stmt)), "ALTER TABLE") &&
+					strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+					continue
+				}
+				return fmt.Errorf("%s: %w", e.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// SplitStatements splits a SQL script on semicolons, honouring single-quoted
+// strings and stripping `--` line comments (migrations are comment-rich and
+// comment text may contain semicolons).
+func SplitStatements(script string) []string {
+	var out []string
+	cur := strings.Builder{}
+	inStr := false
+	runes := []rune(script)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		switch {
+		case inStr:
+			cur.WriteRune(r)
+			if r == '\'' {
+				inStr = false
+			}
+		case r == '\'':
+			inStr = true
+			cur.WriteRune(r)
+		case r == '-' && i+1 < len(runes) && runes[i+1] == '-':
+			for i < len(runes) && runes[i] != '\n' {
+				i++
+			}
+			if i < len(runes) {
+				cur.WriteRune('\n')
+			}
+		case r == ';' && !inStr:
+			out = append(out, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if strings.TrimSpace(cur.String()) != "" {
+		out = append(out, cur.String())
+	}
+	return out
 }
 
 // OpenMemory is for tests.

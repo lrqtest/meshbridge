@@ -24,6 +24,9 @@ func testDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.RunMigrations(d, filepath.Join("..", "..", "migrations")); err != nil {
+		t.Fatal(err)
+	}
 	ph, _ := auth.HashPassword("admin-pass-123")
 	_, err = d.Exec(`INSERT INTO users(id,username,password_hash,role,created_at) VALUES('u1','admin',?, 'admin', 1)`, ph)
 	if err != nil {

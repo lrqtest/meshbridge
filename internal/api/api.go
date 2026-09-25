@@ -15,6 +15,8 @@ import (
 
 	"github.com/meshbridge/meshbridge/internal/audit"
 	"github.com/meshbridge/meshbridge/internal/auth"
+	"github.com/meshbridge/meshbridge/internal/headscale"
+	"github.com/meshbridge/meshbridge/internal/mailer"
 	"github.com/meshbridge/meshbridge/internal/metrics"
 	"github.com/meshbridge/meshbridge/internal/policy"
 )
@@ -24,6 +26,10 @@ type Server struct {
 	Mux           *http.ServeMux
 	HSURL         string
 	HSOK          func() bool
+	HS            *headscale.Client
+	Mailer        *mailer.Service
+	MasterKey     []byte
+	BaseURL       string // public base URL, e.g. https://mineai.top
 	loginFailures *loginLimiter
 }
 
@@ -51,8 +57,18 @@ func New(db *sql.DB) *Server {
 
 func (s *Server) routes() {
 	s.Mux.HandleFunc("/api/v1/health", s.handleHealth)
+	s.Mux.HandleFunc("/api/v1/me", s.requireAuth(s.handleMe))
+	s.Mux.HandleFunc("/api/v1/setup/status", s.handleSetupStatus)
+	s.Mux.HandleFunc("/api/v1/setup/initial", s.handleSetupInitial)
+	s.Mux.HandleFunc("/api/v1/setup/smtp", s.handleSetupSMTP)
+	s.Mux.HandleFunc("/api/v1/setup/smtp/test", s.handleSMTPTest)
+	s.Mux.HandleFunc("/api/v1/setup/registration", s.handleSetupRegistration)
 	s.Mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
 	s.Mux.HandleFunc("/api/v1/auth/logout", s.handleLogout)
+	s.Mux.HandleFunc("/api/v1/auth/send-code", s.handleSendCode)
+	s.Mux.HandleFunc("/api/v1/auth/register", s.handleRegister)
+	s.Mux.HandleFunc("/api/v1/auth/password-reset", s.handlePasswordReset)
+	s.Mux.HandleFunc("/api/v1/devices/enroll", s.handleDeviceEnroll)
 	s.Mux.HandleFunc("/api/v1/projects", s.requireAuth(s.handleProjects))
 	s.Mux.HandleFunc("/api/v1/devices", s.requireAuth(s.handleDevices))
 	s.Mux.HandleFunc("/api/v1/agents/heartbeat", s.handleAgentHeartbeat)
@@ -75,8 +91,8 @@ type loginLimiter struct {
 }
 
 type failState struct {
-	count    int
-	until    time.Time
+	count int
+	until time.Time
 }
 
 func newLoginLimiter() *loginLimiter {
@@ -248,8 +264,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id, phash string
-	err := s.DB.QueryRow(`SELECT id,password_hash FROM users WHERE username=?`, in.Username).Scan(&id, &phash)
-	if err != nil {
+	var disabled int64
+	err := s.DB.QueryRow(`SELECT id,password_hash,disabled FROM users WHERE username=? OR email=?`,
+		in.Username, strings.ToLower(strings.TrimSpace(in.Username))).Scan(&id, &phash, &disabled)
+	if err != nil || disabled == 1 {
 		auth.DummyVerify(in.Password) // equal Argon2 work: no timing-based username probing
 		s.loginFailures.recordFailure(ipKey, time.Now())
 		s.loginFailures.recordFailure(userKey, time.Now())
@@ -570,6 +588,5 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		_ = rows.Scan(&ts, &actor, &event, &pid, &did, &jid, &detail)
 		out = append(out, map[string]any{"ts": ts, "actor": actor, "event": event, "project_id": pid, "device_id": did, "job_id": jid, "detail": detail})
 	}
-		writeJSON(w, map[string]any{"items": out})
+	writeJSON(w, map[string]any{"items": out})
 }
-

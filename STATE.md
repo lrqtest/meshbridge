@@ -81,6 +81,20 @@
 - **Route flap 阻尼**: 单次 DERP 样本不暂停; 连续 2-3 次 (15s+jitter) + remaining > derp_limit 才 PAUSE 并重调度.
 - **No remote shell in agent**: 远程管理走 SSH over Tailscale (OpenSSH), agent 第一版无任意命令执行.
 
+## Web Onboarding (2026-09-26 新增, 已上线)
+
+**网页全流程已部署到 https://mineai.top**（单域名，内嵌 SPA 无外部依赖）:
+
+- **Setup 向导 /#/setup**（仅当无 admin 时可进）: ①邮箱+验证码+密码创建管理员 → ②SMTP 配置+测试发信 → ③设备接入（preauth key + agent token + 三步安装命令）
+- **注册 /#/register**: 邮箱验证码制（沿袭 MineAI 旧项目机制, 加固版）: crypto/rand 6位码、DB 存 sha256 哈希不存明文、同邮箱冷却(settings 默认60s)、全局每分钟5/每日100限流、单码最多5次尝试
+- **登录**: 邮箱或用户名 + Argon2id; token 24h; 忘记密码走 reset 验证码（重置后吊销全部 api_tokens）
+- **控制台 /#/app**: 设备（接入弹窗: 调 headscale 真实签发 preauth key + agent token + 复制安装命令）/传输/中继/审计/设置（SMTP 修改密码留空=保留、注册开关）
+- 后端新增: internal/mailer（隐式TLS 465/STARTTLS 587）、internal/secret（master key + AES-256-GCM, SMTP密码加密落库）、internal/settings、schema v2（002: users.email/verification codes/settings 默认值, db.RunMigrations 幂等 ALTER）、headscale client（ListUsers/CreateUser 幂等/CreatePreAuthKey 双字段名兼容）
+- 二进制 go:embed 内嵌 web/; make build 自动 sync; Caddy @mesh path: / /api/v1/* /favicon.ico /login /register /setup /forgot /app
+- **生产实测通过**: UI 登录（截图验证）、设备接入弹窗（真实 hskey-auth preauth 签发+安装命令）、深链路由、审计/设备表渲染。实测发现并修复: 前端 api() 把 GET+null body 序列化导致所有 GET 抛错（控制台曾不可用）+ 深链未归一化 + headscale CreateUser 重复建号
+- master key: /etc/meshbridge/master.key (640 root:meshbridge); SMTP 密码加密存 settings.smtp_password_enc, 接口永不回显
+- **SMTP 未通**: 用户提供的 QQ 授权码 535 被拒（Account abnormal/password incorrect/服务未开启）, 465/587 双端口均验证为授权码本身问题。→ 用户需到 QQ邮箱 设置-账号 开启 SMTP 并生成新授权码, 然后在网页"设置"里填入（密码留空=保留旧值）, 点"保存并发测试邮件"验证。未通期间注册/忘记密码不可用, setup 向导第2步可跳过
+
 ## Deployment State (2026-09-26 更新)
 
 - **Control VPS 36.151.144.201 (Debian 12, x86_64, 2C/4G/59G): 已部署并验证**

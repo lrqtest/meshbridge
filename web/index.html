@@ -1,30 +1,727 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
 <title>MeshBridge</title>
-<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:24px auto;padding:0 16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;font-size:14px}nav a{margin-right:12px}</style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b9dff'/%3E%3Cpath d='M9 21V11l7 6 7-6v10' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0a0b0d; --panel:#121417; --panel2:#17191d; --border:#23262c; --border2:#2e3239;
+  --text:#e8eaed; --muted:#9ba1a9; --faint:#6b7178;
+  --accent:#5b9dff; --accent-h:#6fabff; --accent-press:#4785e8; --accent-soft:rgba(91,157,255,.12);
+  --ok:#34c37a; --warn:#e5a13a; --err:#e5615c;
+  --shadow:0 8px 30px rgba(0,0,0,.35);
+  --r:12px; --r-s:8px;
+}
+@media (prefers-color-scheme: light){ :root{
+  --bg:#f6f7f9; --panel:#ffffff; --panel2:#f2f4f6; --border:#e4e7eb; --border2:#d4d9df;
+  --text:#181b1f; --muted:#5f6670; --faint:#9aa1aa;
+  --accent:#2e6fdb; --accent-h:#3d7ce4; --accent-press:#2761c4; --accent-soft:rgba(46,111,219,.10);
+  --shadow:0 8px 30px rgba(20,30,50,.10);
+}}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-h)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+
+/* ---------- auth / wizard shell ---------- */
+.center{min-height:100%;display:flex;align-items:center;justify-content:center;padding:32px 16px}
+.card{
+  width:100%;max-width:420px;background:var(--panel);border:1px solid var(--border);
+  border-radius:var(--r);box-shadow:var(--shadow);padding:32px;
+}
+.card.wide{max-width:560px}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.mark{width:26px;height:26px;border-radius:8px;flex:none;
+  background:linear-gradient(135deg,var(--accent) 0%,#8a63ff 100%);
+  box-shadow:0 2px 10px rgba(91,157,255,.35)}
+.brand h1{font-size:19px;font-weight:650;letter-spacing:.2px}
+.sub{color:var(--muted);font-size:13.5px;margin-bottom:24px}
+h2{font-size:16px;font-weight:600;margin-bottom:4px}
+.field{margin:14px 0}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+input,select{
+  width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);
+  border-radius:var(--r-s);padding:10px 12px;font-size:14.5px;outline:none;transition:border .15s, box-shadow .15s;
+}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+input::placeholder{color:var(--faint)}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  background:var(--accent);color:#fff;border:none;border-radius:var(--r-s);
+  padding:11px 16px;font-size:14.5px;font-weight:600;cursor:pointer;transition:background .15s, transform .05s;
+}
+.btn:hover{background:var(--accent-h)} .btn:active{background:var(--accent-press);transform:translateY(1px)}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border2)}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent);background:transparent}
+.btn.slim{width:auto;padding:8px 14px;font-size:13.5px}
+.footnote{text-align:center;color:var(--muted);font-size:13.5px;margin-top:18px}
+.hint{color:var(--faint);font-size:12.5px;margin-top:5px}
+
+/* steps */
+.steps{display:flex;gap:8px;margin:0 0 22px}
+.steps span{height:4px;flex:1;border-radius:2px;background:var(--border)}
+.steps span.on{background:var(--accent)}
+
+/* banner */
+.banner{
+  display:none;border:1px solid var(--border);border-left:3px solid var(--err);
+  background:var(--panel2);border-radius:var(--r-s);padding:10px 12px;font-size:13.5px;color:var(--text);margin:12px 0;
+}
+.banner.ok{border-left-color:var(--ok)} .banner.warn{border-left-color:var(--warn)}
+.banner.show{display:block}
+
+/* toast */
+#toasts{position:fixed;top:18px;right:18px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.toast{
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);
+  padding:11px 16px;font-size:13.5px;max-width:340px;animation:tin .25s ease;
+}
+.toast.ok{border-left:3px solid var(--ok)} .toast.err{border-left:3px solid var(--err)}
+@keyframes tin{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+
+/* ---------- app shell ---------- */
+#app{display:none;min-height:100%}
+.topbar{
+  position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 82%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--border);
+}
+.topbar-in{max-width:1080px;margin:0 auto;padding:0 20px;height:58px;display:flex;align-items:center;gap:18px}
+.topbar .brand h1{font-size:16px}
+.nav{display:flex;gap:4px;margin-left:8px}
+.nav button{
+  background:none;border:none;color:var(--muted);font-size:14px;padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:500;
+}
+.nav button:hover{color:var(--text);background:var(--panel2)}
+.nav button.on{color:var(--accent);background:var(--accent-soft)}
+.spacer{flex:1}
+.who{color:var(--muted);font-size:13.5px}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+.pagehead{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.pagehead h2{font-size:20px;margin:0}
+.pane{display:none} .pane.on{display:block}
+
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+th,td{padding:11px 14px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;background:var(--panel2);font-size:12.5px;letter-spacing:.3px}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:var(--faint)}
+.dot.on{background:var(--ok);box-shadow:0 0 8px rgba(52,195,122,.6)}
+.badge{font-size:12px;padding:2px 9px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
+.badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--border))}
+.badge.err{color:var(--err);border-color:color-mix(in srgb,var(--err) 35%,var(--border))}
+
+.cmd{
+  position:relative;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-s);
+  padding:12px 44px 12px 14px;overflow-x:auto;white-space:pre;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--text);
+}
+.copy{position:absolute;top:8px;right:8px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);
+  border-radius:6px;font-size:11.5px;padding:3px 8px;cursor:pointer}
+.copy:hover{color:var(--accent);border-color:var(--accent)}
+.secret{color:var(--warn)}
+
+.modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+.modal-mask.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);
+  width:100%;max-width:560px;padding:26px;max-height:90vh;overflow:auto}
+.modal h3{font-size:16px;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media(max-width:640px){.grid2{grid-template-columns:1fr}.nav{display:none}}
+.check{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text);cursor:pointer}
+.check input{width:auto}
+.kv{color:var(--muted);font-size:13px}.kv b{color:var(--text);font-weight:600}
+</style>
 </head>
 <body>
-<h1>MeshBridge</h1>
-<p>Control != Data. <span id="health">health: …</span></p>
-<nav><a href="#devices">Devices</a><a href="#transfers">Transfers</a><a href="#relays">Relays</a><a href="#audit">Audit</a></nav>
-<label>API token <input id="token" type="password" size="40" placeholder="MESH_TOKEN"></label>
-<button onclick="load()">Load</button>
-<h2 id="devices">Devices</h2><table id="t-dev"><tr><th>hostname</th><th>ip</th><th>online</th><th>last_seen</th></tr></table>
-<h2 id="transfers">Transfers</h2><table id="t-tr"><tr><th>id</th><th>src→dst</th><th>state</th><th>route</th><th>done/total</th></tr></table>
-<h2 id="relays">Relays</h2><table id="t-relay"><tr><th>name</th><th>region</th><th>healthy</th><th>out/quota</th></tr></table>
+<div id="toasts"></div>
+
+<!-- ============ SETUP WIZARD ============ -->
+<div id="v-setup" class="center" style="display:none">
+  <div class="card wide">
+    <div class="brand"><div class="mark"></div><h1>MeshBridge 初始部署</h1></div>
+    <p class="sub">三步完成控制面引导：管理员账号 → 邮件服务 → 设备接入</p>
+    <div class="steps" id="s-steps"><span class="on"></span><span></span><span></span></div>
+
+    <div id="s1">
+      <h2>创建管理员账号</h2>
+      <p class="sub" style="margin-bottom:8px">使用邮箱注册，需邮箱验证码确认。</p>
+      <div class="field"><label>邮箱</label>
+        <div class="row"><input id="s1-email" type="email" placeholder="you@example.com" autocomplete="email">
+        <button class="btn ghost slim" style="flex:none" id="s1-send">发送验证码</button></div>
+        <p class="hint" id="s1-cd"></p>
+      </div>
+      <div class="field"><label>验证码</label><input id="s1-code" inputmode="numeric" maxlength="6" placeholder="6 位数字" class="mono"></div>
+      <div class="grid2">
+        <div class="field"><label>用户名（可选）</label><input id="s1-user" placeholder="默认取邮箱前缀"></div>
+        <div class="field"><label>密码（≥12 位）</label><input id="s1-pass" type="password" placeholder="••••••••••••"></div>
+      </div>
+      <div class="banner" id="s1-err"></div>
+      <button class="btn" id="s1-go">创建并继续</button>
+    </div>
+
+    <div id="s2" style="display:none">
+      <h2>邮件服务（SMTP）</h2>
+      <p class="sub" style="margin-bottom:8px">用于注册/找回密码的验证码发信。QQ 邮箱：smtp.qq.com，端口 465，密码为授权码。</p>
+      <div class="grid2">
+        <div class="field"><label>SMTP 主机</label><input id="s2-host" placeholder="smtp.qq.com" value="smtp.qq.com"></div>
+        <div class="field"><label>端口</label>
+          <select id="s2-port"><option value="465">465（SSL）</option><option value="587">587（STARTTLS）</option></select></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>账号</label><input id="s2-user" placeholder="you@qq.com"></div>
+        <div class="field"><label>密码 / 授权码</label><input id="s2-pass" type="password" placeholder="授权码"></div>
+      </div>
+      <div class="field"><label>发件地址（可选，默认同账号）</label><input id="s2-from" placeholder="you@qq.com"></div>
+      <div class="banner" id="s2-err"></div>
+      <div class="row">
+        <button class="btn ghost" id="s2-test">保存并发测试邮件</button>
+        <button class="btn" id="s2-go">跳过 / 继续</button>
+      </div>
+    </div>
+
+    <div id="s3" style="display:none">
+      <h2>接入第一台设备</h2>
+      <p class="sub" style="margin-bottom:8px">为设备生成 Tailscale 入网密钥与 Agent 令牌（仅显示一次）。</p>
+      <div class="field"><label>设备主机名</label>
+        <div class="row"><input id="s3-host" placeholder="my-laptop">
+        <button class="btn ghost slim" style="flex:none" id="s3-gen">生成</button></div>
+      </div>
+      <div class="banner" id="s3-err"></div>
+      <div id="s3-out" style="display:none">
+        <div class="field"><label>① Tailscale 入网（preauth key）</label>
+          <div class="cmd"><span class="mono" id="s3-preauth"></span><button class="copy" data-cp="s3-preauth">复制</button></div>
+        </div>
+        <div class="field"><label>② Agent 令牌（写入目标机 /etc/meshbridge/agent.token，0600）</label>
+          <div class="cmd"><span class="mono secret" id="s3-token"></span><button class="copy" data-cp="s3-token">复制</button></div>
+        </div>
+        <div class="field"><label>③ 在目标机执行</label>
+          <div class="cmd"><span class="mono" id="s3-cmd"></span><button class="copy" data-cp="s3-cmd">复制</button></div>
+        </div>
+      </div>
+      <button class="btn" id="s3-go">完成，进入控制台</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ LOGIN ============ -->
+<div id="v-login" class="center" style="display:none">
+  <div class="card">
+    <div class="brand"><div class="mark"></div><h1>MeshBridge</h1></div>
+    <p class="sub">私有设备组网 · 大文件传输编排</p>
+    <div class="field"><label>邮箱或用户名</label><input id="l-user" autocomplete="username" placeholder="you@example.com"></div>
+    <div class="field"><label>密码</label><input id="l-pass" type="password" autocomplete="current-password" placeholder="••••••••••••"></div>
+    <div class="banner" id="l-err"></div>
+    <button class="btn" id="l-go">登录</button>
+    <p class="footnote"><a href="#/forgot">忘记密码</a> · <a href="#/register">注册账号</a></p>
+  </div>
+</div>
+
+<!-- ============ REGISTER ============ -->
+<div id="v-register" class="center" style="display:none">
+  <div class="card">
+    <div class="brand"><div class="mark"></div><h1>注册账号</h1></div>
+    <p class="sub">邮箱验证后即可使用控制台</p>
+    <div class="field"><label>邮箱</label>
+      <div class="row"><input id="r-email" type="email" placeholder="you@example.com">
+      <button class="btn ghost slim" style="flex:none" id="r-send">发送验证码</button></div>
+      <p class="hint" id="r-cd"></p>
+    </div>
+    <div class="field"><label>验证码</label><input id="r-code" inputmode="numeric" maxlength="6" placeholder="6 位数字" class="mono"></div>
+    <div class="grid2">
+      <div class="field"><label>用户名（可选）</label><input id="r-user" placeholder="默认取邮箱前缀"></div>
+      <div class="field"><label>密码（≥12 位）</label><input id="r-pass" type="password" placeholder="••••••••••••"></div>
+    </div>
+    <div class="banner" id="r-err"></div>
+    <button class="btn" id="r-go">注册</button>
+    <p class="footnote"><a href="#/login">返回登录</a></p>
+  </div>
+</div>
+
+<!-- ============ FORGOT ============ -->
+<div id="v-forgot" class="center" style="display:none">
+  <div class="card">
+    <div class="brand"><div class="mark"></div><h1>重置密码</h1></div>
+    <p class="sub">输入注册邮箱接收验证码</p>
+    <div class="field"><label>邮箱</label>
+      <div class="row"><input id="f-email" type="email" placeholder="you@example.com">
+      <button class="btn ghost slim" style="flex:none" id="f-send">发送验证码</button></div>
+      <p class="hint" id="f-cd"></p>
+    </div>
+    <div class="field"><label>验证码</label><input id="f-code" inputmode="numeric" maxlength="6" placeholder="6 位数字" class="mono"></div>
+    <div class="field"><label>新密码（≥12 位）</label><input id="f-pass" type="password" placeholder="••••••••••••"></div>
+    <div class="banner" id="f-err"></div>
+    <button class="btn" id="f-go">重置密码</button>
+    <p class="footnote"><a href="#/login">返回登录</a></p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <div class="topbar"><div class="topbar-in">
+    <div class="brand"><div class="mark"></div><h1>MeshBridge</h1></div>
+    <nav class="nav" id="tabs">
+      <button data-t="devices" class="on">设备</button>
+      <button data-t="transfers">传输</button>
+      <button data-t="relays">中继</button>
+      <button data-t="audit">审计</button>
+      <button data-t="settings">设置</button>
+    </nav>
+    <div class="spacer"></div>
+    <span class="who" id="who"></span>
+    <button class="btn ghost slim" id="logout">退出</button>
+  </div></div>
+  <div class="wrap">
+    <section class="pane on" id="p-devices">
+      <div class="pagehead"><h2>设备</h2><div class="spacer"></div>
+        <button class="btn slim" id="add-device">接入设备</button></div>
+      <table><thead><tr><th>主机名</th><th>Tailscale IP</th><th>状态</th><th>最近心跳</th></tr></thead>
+      <tbody id="t-dev"><tr><td colspan="4" class="kv">加载中…</td></tr></tbody></table>
+    </section>
+    <section class="pane" id="p-transfers">
+      <div class="pagehead"><h2>传输任务</h2><div class="spacer"></div>
+        <button class="btn slim" id="add-transfer">新建任务</button></div>
+      <table><thead><tr><th>ID</th><th>源 → 目标</th><th>路径</th><th>状态</th><th>进度</th></tr></thead>
+      <tbody id="t-tr"><tr><td colspan="5" class="kv">加载中…</td></tr></tbody></table>
+    </section>
+    <section class="pane" id="p-relays">
+      <div class="pagehead"><h2>中继节点</h2></div>
+      <table><thead><tr><th>名称</th><th>区域</th><th>健康</th><th>本月流量 / 配额</th></tr></thead>
+      <tbody id="t-relay"><tr><td colspan="4" class="kv">加载中…</td></tr></tbody></table>
+    </section>
+    <section class="pane" id="p-audit">
+      <div class="pagehead"><h2>审计日志</h2></div>
+      <table><thead><tr><th>时间</th><th>操作者</th><th>事件</th><th>详情</th></tr></thead>
+      <tbody id="t-audit"><tr><td colspan="4" class="kv">加载中…</td></tr></tbody></table>
+    </section>
+    <section class="pane" id="p-settings">
+      <div class="pagehead"><h2>设置</h2></div>
+      <div class="card wide" style="box-shadow:none">
+        <h2>邮件服务（SMTP）</h2>
+        <p class="sub" style="margin-bottom:8px">修改后点击“保存并发测试邮件”验证。</p>
+        <div class="grid2">
+          <div class="field"><label>SMTP 主机</label><input id="set-host" placeholder="smtp.qq.com"></div>
+          <div class="field"><label>端口</label>
+            <select id="set-port"><option value="465">465（SSL）</option><option value="587">587（STARTTLS）</option><option value="25">25</option></select></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>账号</label><input id="set-user"></div>
+          <div class="field"><label>密码 / 授权码</label><input id="set-pass" type="password" placeholder="留空表示不修改"></div>
+        </div>
+        <div class="field"><label>发件地址（可选）</label><input id="set-from"></div>
+        <div class="banner" id="set-err"></div>
+        <div class="row">
+          <button class="btn ghost" id="set-test">保存并发测试邮件</button>
+          <button class="btn" id="set-save">保存</button>
+        </div>
+        <div style="margin-top:26px" class="field">
+          <label class="check"><input type="checkbox" id="set-openreg"> 开放公开注册（邮箱验证）</label>
+        </div>
+        <button class="btn ghost slim" id="set-savereg">保存注册开关</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- device enroll modal -->
+<div class="modal-mask" id="m-enroll">
+  <div class="modal">
+    <h3>接入设备</h3>
+    <p class="sub" style="margin:-6px 0 12px">生成 Tailscale 入网密钥 + Agent 令牌，仅显示一次。</p>
+    <div class="field"><label>设备主机名</label>
+      <div class="row"><input id="e-host" placeholder="node-bj-01">
+      <button class="btn ghost slim" style="flex:none" id="e-gen">生成</button></div>
+    </div>
+    <div class="banner" id="e-err"></div>
+    <div id="e-out" style="display:none">
+      <div class="field"><label>① Tailscale 入网密钥</label>
+        <div class="cmd"><span class="mono" id="e-preauth"></span><button class="copy" data-cp="e-preauth">复制</button></div></div>
+      <div class="field"><label>② Agent 令牌</label>
+        <div class="cmd"><span class="mono secret" id="e-token"></span><button class="copy" data-cp="e-token">复制</button></div></div>
+      <div class="field"><label>③ 在目标机执行</label>
+        <div class="cmd"><span class="mono" id="e-cmd"></span><button class="copy" data-cp="e-cmd">复制</button></div></div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn ghost" id="e-close">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- new transfer modal -->
+<div class="modal-mask" id="m-transfer">
+  <div class="modal">
+    <h3>新建传输任务</h3>
+    <div class="grid2">
+      <div class="field"><label>源设备 ID</label><input id="tf-src" class="mono" placeholder="设备 ID"></div>
+      <div class="field"><label>目标设备 ID</label><input id="tf-dst" class="mono" placeholder="设备 ID"></div>
+    </div>
+    <div class="field"><label>源路径（相对设备 allowed_roots）</label><input id="tf-sp" placeholder="datasets/imagenet.tar"></div>
+    <div class="field"><label>目标路径</label><input id="tf-dp" placeholder="datasets/imagenet.tar"></div>
+    <div class="banner" id="tf-err"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" id="tf-cancel">取消</button>
+      <button class="btn" id="tf-go">创建</button>
+    </div>
+  </div>
+</div>
+
 <script>
-const base = location.origin;
-async function api(p){const t=document.getElementById('token').value;const r=await fetch(base+p,{headers:{Authorization:'Bearer '+t}});if(!r.ok)throw new Error(r.status);return r.json();}
-// addRow uses textContent only: server data (hostname, error, …) is untrusted
-// and must never flow into innerHTML (stored XSS → token theft).
-function addRow(tableId, cells){const t=document.getElementById(tableId);const tr=document.createElement('tr');cells.forEach(c=>{const td=document.createElement('td');td.textContent=c;tr.appendChild(td);});t.appendChild(tr);}
-function clearRows(tableId){const t=document.getElementById(tableId);while(t.rows.length>1)t.deleteRow(-1);}
-async function load(){try{const h=await fetch(base+'/api/v1/health').then(r=>r.json());document.getElementById('health').textContent='health: '+(h.ok?'ok':'degraded')+' agents='+h.agents_online;}catch(e){document.getElementById('health').textContent='health: unreachable';return;}
- clearRows('t-dev');clearRows('t-tr');clearRows('t-relay');
- try{const d=await api('/api/v1/devices?limit=100');d.items.forEach(x=>addRow('t-dev',[x.hostname,x.tailscale_ip||'',x.online?'yes':'no',x.last_seen||'']));}catch(e){}
- try{const d=await api('/api/v1/transfers?limit=100');d.items.forEach(x=>addRow('t-tr',[x.id,x.src+'→'+x.dst,x.state,x.route,x.bytes_done+'/'+x.bytes_total]));}catch(e){}
- try{const d=await api('/api/v1/relays');d.items.forEach(x=>addRow('t-relay',[x.name,x.region,x.healthy?'yes':'no',x.bytes_out_month+'/'+x.quota]));}catch(e){}
+"use strict";
+/* ---------- utilities ---------- */
+const $ = id => document.getElementById(id);
+const TOKEN_KEY = "mb_token";
+const token = () => localStorage.getItem(TOKEN_KEY) || "";
+const setToken = t => t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY);
+
+function toast(msg, cls){
+  const el = document.createElement("div");
+  el.className = "toast " + (cls || "");
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(()=>{ el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(()=>el.remove(), 320); }, 4200);
 }
+async function api(method, path, body, authed = true){
+  const opt = { method, headers: {} };
+  if (authed && token()) opt.headers["Authorization"] = "Bearer " + token();
+  if (body !== undefined && body !== null){ opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  let data = {};
+  try { data = await r.json(); } catch(_){}
+  if (!r.ok){
+    const e = new Error(data.error || ("HTTP " + r.status));
+    e.status = r.status; e.code = data.code;
+    throw e;
+  }
+  return data;
+}
+function banner(id, msg, cls){
+  const b = $(id);
+  if (!msg){ b.className = "banner"; b.textContent = ""; return; }
+  b.className = "banner show " + (cls || "");
+  b.textContent = msg;
+}
+function copyText(id, btn){
+  navigator.clipboard.writeText($(id).textContent).then(()=>{
+    btn.textContent = "已复制"; setTimeout(()=>btn.textContent = "复制", 1500);
+  });
+}
+document.addEventListener("click", e=>{
+  if (e.target.classList.contains("copy")) copyText(e.target.dataset.cp, e.target);
+});
+function bindSend(btnId, cdId, emailId, purpose, errId){
+  $(btnId).addEventListener("click", async ()=>{
+    banner(errId, "");
+    const email = $(emailId).value.trim().toLowerCase();
+    if (!email){ banner(errId, "请输入邮箱"); return; }
+    $(btnId).disabled = true;
+    try{
+      const d = await api("POST", "/api/v1/auth/send-code", { email, purpose }, false);
+      toast("验证码已发送，请查收邮箱", "ok");
+      countdown($(btnId), $(cdId), d.cooldown_seconds || 60);
+    }catch(err){ banner(errId, err.message); countdown($(btnId), $(cdId), 3); }
+  });
+}
+function countdown(btn, hint, sec){
+  const t0 = Date.now();
+  const tick = setInterval(()=>{
+    const left = sec - Math.floor((Date.now() - t0)/1000);
+    if (left <= 0){ btn.disabled = false; if(hint) hint.textContent = ""; clearInterval(tick); return; }
+    if (hint) hint.textContent = `可重新发送：${left}s`;
+  }, 300);
+  btn.disabled = true;
+}
+function fmtBytes(n){
+  if (!n && n !== 0) return "—";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0;
+  while (n >= 1024 && i < u.length-1){ n /= 1024; i++; }
+  return n.toFixed(n >= 100 || i === 0 ? 0 : 1) + " " + u[i];
+}
+function fmtTime(ts){
+  if (!ts) return "—";
+  return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
+}
+function tableRows(tbodyId, rows, cells){
+  const tb = $(tbodyId); tb.textContent = "";
+  if (!rows.length){
+    const tr = document.createElement("tr"); const td = document.createElement("td");
+    td.className = "kv"; td.colSpan = cells; td.textContent = "暂无数据";
+    tr.appendChild(td); tb.appendChild(tr); return;
+  }
+  for (const r of rows){
+    const tr = document.createElement("tr");
+    for (const c of r){
+      const td = document.createElement("td");
+      if (typeof c === "object"){ if (c.el) td.appendChild(c.el); }
+      else td.textContent = c;
+      tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  }
+}
+function statusDot(on){
+  const s = document.createElement("span");
+  s.innerHTML = ""; const d = document.createElement("span");
+  d.className = "dot" + (on ? " on" : "");
+  s.appendChild(d); s.appendChild(document.createTextNode(on ? "在线" : "离线"));
+  return s;
+}
+
+/* ---------- router ---------- */
+const views = ["v-setup","v-login","v-register","v-forgot"];
+function show(id){
+  for (const v of views) $(v).style.display = "none";
+  $("app").style.display = "none";
+  if (id === "app") $("app").style.display = "block";
+  else if ($(id)) $(id).style.display = "flex";
+}
+async function route(){
+  // canonicalize deep links (/register) to hash routes (#/register)
+  const path = location.pathname.replace(/\/+$/, "");
+  if (path && path !== "/" && !location.hash){
+    history.replaceState(null, "", "/" + "#" + path);
+  }
+  const h = location.hash || "#/";
+  try{
+    const st = await api("GET","/api/v1/setup/status",null,false);
+    if (st.setup_required && h !== "#/setup"){ location.hash = "#/setup"; return; }
+    if (h === "#/setup"){
+      if (!st.setup_required){ location.hash = "#/login"; return; }
+      show("v-setup"); return;
+    }
+    if (token()){
+      try{ await api("GET","/api/v1/me"); }catch(_){ setToken(""); if (h !== "#/login"){ location.hash = "#/login"; return; } }
+    }
+    switch(h){
+      case "#/register": show("v-register"); return;
+      case "#/forgot": show("v-forgot"); return;
+      case "#/login": show("v-login"); return;
+      default:
+        if (token()){ show("app"); enterApp(); } else show("v-login");
+    }
+  }catch(e){ show("v-login"); }
+}
+window.addEventListener("hashchange", route);
+
+/* ---------- setup wizard ---------- */
+bindSend("s1-send","s1-cd","s1-email","setup","s1-err");
+$("s1-go").addEventListener("click", async ()=>{
+  banner("s1-err","");
+  const email = $("s1-email").value.trim().toLowerCase();
+  const code = $("s1-code").value.trim();
+  const pass = $("s1-pass").value;
+  if (!email || code.length !== 6){ banner("s1-err","请填写邮箱和 6 位验证码"); return; }
+  if (pass.length < 12){ banner("s1-err","密码至少 12 位"); return; }
+  try{
+    const d = await api("POST","/api/v1/setup/initial",{ email, code, password: pass, username: $("s1-user").value.trim() }, false);
+    setToken(d.token);
+    toast("管理员创建成功：" + d.username, "ok");
+    $("s1").style.display = "none"; $("s2").style.display = "block";
+    $("s-steps").children[0].classList.remove("on"); $("s-steps").children[1].classList.add("on");
+  }catch(err){ banner("s1-err", err.message); }
+});
+function smtpPayload(hostId, portId, userId, passId, fromId){
+  return { host: $(hostId).value.trim(), port: parseInt($(portId).value,10),
+           username: $(userId).value.trim(), password: $(passId).value, from: $(fromId).value.trim() };
+}
+function fillSmtp(hostId, portId, userId, passId, fromId, d){
+  if (!d) return;
+  $(hostId).value = d.host || ""; $(portId).value = d.port || "465";
+  $(userId).value = d.username || ""; $(fromId).value = d.from || "";
+}
+async function smtpSave(errId, hostId, portId, userId, passId, fromId){
+  banner(errId, "");
+  const p = smtpPayload(hostId, portId, userId, passId, fromId);
+  if (!p.host || !p.port || !p.username || !p.password){
+    banner(errId, "主机、端口、账号、密码均必填"); return false;
+  }
+  await api("POST","/api/v1/setup/smtp", p);
+  return true;
+}
+$("s2-test").addEventListener("click", async ()=>{
+  try{
+    if (await smtpSave("s2-err","s2-host","s2-port","s2-user","s2-pass","s2-from")){
+      await api("POST","/api/v1/setup/smtp/test",{});
+      toast("测试邮件已发送，请查收", "ok");
+    }
+  }catch(err){ banner("s2-err", err.message); }
+});
+$("s2-go").addEventListener("click", ()=>{
+  $("s2").style.display = "none"; $("s3").style.display = "block";
+  $("s-steps").children[1].classList.remove("on"); $("s-steps").children[2].classList.add("on");
+});
+async function doEnroll(hostId, errId, preId, tokId, cmdId, outId){
+  banner(errId, "");
+  const hostname = $(hostId).value.trim();
+  if (!hostname){ banner(errId, "请输入主机名"); return; }
+  try{
+    const d = await api("POST","/api/v1/devices/enroll",{ hostname });
+    $(outId).style.display = "block";
+    $(preId).textContent = d.preauth_key || "（headscale 不可用：" + (d.headscale_error || "未知") + "）";
+    $(tokId).textContent = d.agent_token;
+    $(cmdId).textContent =
+      "# 1) 安装并加入 tailnet\ncurl -fsSL https://tailscale.com/install.sh | sh\n" +
+      "sudo tailscale up --login-server " + (location.origin) + " --hostname " + hostname + " --authkey " + d.preauth_key + "\n\n" +
+      "# 2) 写入 Agent 令牌\nsudo mkdir -p /etc/meshbridge && echo '" + d.agent_token + "' | sudo tee /etc/meshbridge/agent.token >/dev/null && sudo chmod 600 /etc/meshbridge/agent.token\n\n" +
+      "# 3) 安装 meshbridge-agent（从发布页下载对应平台二进制后）：\n" +
+      "sudo install -m755 meshbridge-agent /usr/local/bin/\n" +
+      "sudo meshbridge-agent --controller " + location.origin + " --device-id " + d.device_id + " --token-file /etc/meshbridge/agent.token";
+    toast("设备已生成，密钥仅显示一次", "ok");
+  }catch(err){ banner(errId, err.message); }
+}
+$("s3-gen").addEventListener("click", ()=>doEnroll("s3-host","s3-err","s3-preauth","s3-token","s3-cmd","s3-out"));
+$("s3-go").addEventListener("click", ()=>{ location.hash = "#/app"; });
+
+/* ---------- login / register / forgot ---------- */
+$("l-go").addEventListener("click", doLogin);
+$("l-pass").addEventListener("keydown", e=>{ if (e.key === "Enter") doLogin(); });
+async function doLogin(){
+  banner("l-err","");
+  try{
+    const d = await api("POST","/api/v1/auth/login",
+      { username: $("l-user").value.trim(), password: $("l-pass").value }, false);
+    setToken(d.token); location.hash = "#/app";
+  }catch(err){ banner("l-err", err.status === 429 ? "尝试过于频繁，请稍后再试" : "账号或密码错误"); }
+}
+bindSend("r-send","r-cd","r-email","register","r-err");
+$("r-go").addEventListener("click", async ()=>{
+  banner("r-err","");
+  if ($("r-pass").value.length < 12){ banner("r-err","密码至少 12 位"); return; }
+  try{
+    const d = await api("POST","/api/v1/auth/register",{
+      email: $("r-email").value.trim().toLowerCase(), code: $("r-code").value.trim(),
+      password: $("r-pass").value, username: $("r-user").value.trim() }, false);
+    setToken(d.token); toast("注册成功", "ok"); location.hash = "#/app";
+  }catch(err){ banner("r-err", err.message); }
+});
+bindSend("f-send","f-cd","f-email","reset","f-err");
+$("f-go").addEventListener("click", async ()=>{
+  banner("f-err","");
+  if ($("f-pass").value.length < 12){ banner("f-err","密码至少 12 位"); return; }
+  try{
+    await api("POST","/api/v1/auth/password-reset",{
+      email: $("f-email").value.trim().toLowerCase(), code: $("f-code").value.trim(),
+      new_password: $("f-pass").value }, false);
+    toast("密码已重置，请用新密码登录", "ok"); location.hash = "#/login";
+  }catch(err){ banner("f-err", err.message); }
+});
+
+/* ---------- app ---------- */
+let curTab = "devices";
+$("tabs").addEventListener("click", e=>{
+  if (e.target.dataset.t){
+    curTab = e.target.dataset.t;
+    for (const b of $("tabs").children) b.classList.toggle("on", b === e.target);
+    for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
+    $("p-" + curTab).classList.add("on");
+    loadTab();
+  }
+});
+$("logout").addEventListener("click", async ()=>{
+  try{ await api("POST","/api/v1/auth/logout"); }catch(_){}
+  setToken(""); location.hash = "#/login";
+});
+async function enterApp(){
+  try{
+    const me = await api("GET","/api/v1/me");
+    $("who").textContent = me.username + (me.role === "admin" ? " · 管理员" : "");
+    loadTab();
+    if (me.role === "admin"){
+      const d = await api("GET","/api/v1/setup/smtp");
+      fillSmtp("set-host","set-port","set-user","set-pass","set-from", d);
+      $("set-pass").placeholder = d.configured ? "已保存（留空不修改）" : "未配置";
+      const st = await api("GET","/api/v1/setup/status");
+      $("set-openreg").checked = !!st.allow_registration;
+    } else {
+      $("tabs").querySelector('[data-t="settings"]').style.display = "none";
+    }
+  }catch(err){ setToken(""); location.hash = "#/login"; }
+}
+function loadTab(){
+  if (curTab === "devices") loadDevices();
+  else if (curTab === "transfers") loadTransfers();
+  else if (curTab === "relays") loadRelays();
+  else if (curTab === "audit") loadAudit();
+}
+async function loadDevices(){
+  try{
+    const d = await api("GET","/api/v1/devices?limit=200");
+    tableRows("t-dev", d.items.map(x=>[x.hostname, x.tailscale_ip || "—",
+      { el: statusDot(x.online) }, fmtTime(x.last_seen)]), 4);
+  }catch(err){ toast("设备加载失败：" + err.message, "err"); }
+}
+async function loadTransfers(){
+  try{
+    const d = await api("GET","/api/v1/transfers?limit=200");
+    tableRows("t-tr", d.items.map(x=>[x.id, x.src + " → " + x.dst,
+      (x.route || "—"), x.state, fmtBytes(x.bytes_done) + " / " + fmtBytes(x.bytes_total)]), 5);
+  }catch(err){ toast("任务加载失败：" + err.message, "err"); }
+}
+async function loadRelays(){
+  try{
+    const d = await api("GET","/api/v1/relays");
+    tableRows("t-relay", d.items.map(x=>[x.name, x.region,
+      x.healthy ? "健康" : "异常", fmtBytes(x.bytes_out_month) + " / " + fmtBytes(x.quota)]), 4);
+  }catch(err){ toast("中继加载失败：" + err.message, "err"); }
+}
+async function loadAudit(){
+  try{
+    const d = await api("GET","/api/v1/audit?limit=100");
+    tableRows("t-audit", d.items.map(x=>[fmtTime(x.ts), x.actor, x.event, x.detail || "—"]), 4);
+  }catch(err){ toast("审计加载失败：" + err.message, "err"); }
+}
+/* enroll modal */
+$("add-device").addEventListener("click", ()=>{ $("m-enroll").classList.add("show"); banner("e-err",""); });
+$("e-close").addEventListener("click", ()=>{ $("m-enroll").classList.remove("show"); loadDevices(); });
+$("e-gen").addEventListener("click", ()=>doEnroll("e-host","e-err","e-preauth","e-token","e-cmd","e-out"));
+/* transfer modal */
+$("add-transfer").addEventListener("click", ()=>{ $("m-transfer").classList.add("show"); banner("tf-err",""); });
+$("tf-cancel").addEventListener("click", ()=>$("m-transfer").classList.remove("show"));
+$("tf-go").addEventListener("click", async ()=>{
+  banner("tf-err","");
+  try{
+    await api("POST","/api/v1/transfers",{
+      src_device_id: $("tf-src").value.trim(), dst_device_id: $("tf-dst").value.trim(),
+      src_path: $("tf-sp").value.trim(), dst_path: $("tf-dp").value.trim() });
+    $("m-transfer").classList.remove("show"); toast("任务已创建", "ok"); loadTransfers();
+  }catch(err){ banner("tf-err", err.message); }
+});
+/* settings */
+$("set-save").addEventListener("click", async ()=>{
+  try{
+    const p = smtpPayload("set-host","set-port","set-user","set-pass","set-from");
+    if (!p.password) delete p.password;   // keep stored secret when blank
+    await api("POST","/api/v1/setup/smtp", p);
+    toast("SMTP 配置已保存", "ok");
+  }catch(err){ banner("set-err", err.message); }
+});
+$("set-test").addEventListener("click", async ()=>{
+  try{
+    const p = smtpPayload("set-host","set-port","set-user","set-pass","set-from");
+    if (p.host && p.password) await api("POST","/api/v1/setup/smtp", p);
+    else if (p.host){ // save without password change
+      delete p.password; await api("POST","/api/v1/setup/smtp", p);
+    }
+    await api("POST","/api/v1/setup/smtp/test",{});
+    toast("测试邮件已发送，请查收", "ok");
+  }catch(err){ banner("set-err", err.message); }
+});
+$("set-savereg").addEventListener("click", async ()=>{
+  try{
+    await api("POST","/api/v1/setup/registration", { allow: $("set-openreg").checked });
+    toast("已保存", "ok");
+  }catch(err){ toast(err.message, "err"); }
+});
+
+route();
 </script>
-</body></html>
+</body>
+</html>

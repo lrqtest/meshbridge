@@ -18,3 +18,4 @@ dist/
 bin/
 web/dist/
 .DS_Store
+cmd/meshbridge-server/web/

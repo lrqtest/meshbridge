@@ -12,7 +12,12 @@ vet:
 race:
 	go test -race ./... -count=1
 
-build:
+# The server binary embeds the UI; web/ is canonical, the embed copy is generated.
+sync-web:
+	mkdir -p cmd/meshbridge-server/web
+	cp web/index.html cmd/meshbridge-server/web/index.html
+
+build: sync-web
 	go build -o bin/meshbridge-server ./cmd/meshbridge-server
 	go build -o bin/meshbridge-agent ./cmd/meshbridge-agent
 	go build -o bin/meshbridge-cli ./cmd/meshbridge-cli
