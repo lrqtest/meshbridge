@@ -33,7 +33,8 @@
     "all": "すべて",
     "refresh": "更新",
     "loadMore": "さらに読み込む",
-    "noMatch": "条件に一致するものはありません。"
+    "noMatch": "条件に一致するものはありません。",
+    "actions": "操作"
   },
   "nav": {
     "what": "概要",
@@ -236,7 +237,7 @@
     "c1": "Tailscale をインストールしてネットワークに参加",
     "c2": "エージェントトークンを保存（root のみ読み取り可）",
     "c2win": "エージェントトークンを保存（管理者と SYSTEM のみ）",
-    "c3": "meshbridge-agent をインストール（先にプラットフォーム用ビルドを入手）",
+    "c3": "meshbridge-agent をダウンロードしてインストール（アーキテクチャ自動判定・チェックサム検証）",
     "c4": "エージェントを起動",
     "success": "デバイスを作成しました。キーは今回のみ表示されます。"
   },
@@ -261,6 +262,35 @@
     "submit": "転送を作成",
     "created": "転送をキューに入れました",
     "needTwo": "転送を作成するには、接続済みデバイスが 2 台必要です。"
+  },
+  "tun": {
+    "title": "新規トンネル",
+    "sub": "社内 Web ページに鍵で保護された公開リンクを与えます。",
+    "needDevice": "まずデバイスを接続してください。",
+    "device": "デバイス",
+    "name": "名前",
+    "namePh": "例：チームダッシュボード",
+    "scheme": "スキーム",
+    "port": "ローカルポート",
+    "portPh": "8080",
+    "host": "ローカルホスト",
+    "hostHint": "デバイス上の IP リテラル——ループバックまたはプライベート範囲のみ。",
+    "keyRequired": "アクセスキー",
+    "keyOn": "必須（推奨）",
+    "keyOff": "不要",
+    "keyHint": "訪問者は鍵を一度入力するだけで、API 呼び出しでは Bearer トークンで渡せます。",
+    "submit": "トンネルを作成",
+    "onceWarn": "今すぐ鍵をコピーしてください——一度しか表示されず、復元できません。",
+    "urlPath": "公開リンク（パス）",
+    "urlSubdomain": "公開リンク（サブドメイン）",
+    "accessKey": "アクセスキー",
+    "agentHint": "デバイスの agent が次のハートビート（約 30 秒）で自動的に接続します。再起動は不要です。",
+    "success": "トンネルを作成しました",
+    "badPort": "ポートは 1–65535 で指定してください。",
+    "sandbox": "オリジン分離",
+    "sandboxOn": "サンドボックス（推奨）",
+    "sandboxOff": "フルページ（信頼できるコンテンツのみ）",
+    "sandboxHint": "パス模式のリンクはコンソールと同一オリジンです。サンドボックスによりトンネルページからの読み取りを防ぎます。"
   },
   "status": {
     "online": "オンライン",
@@ -297,13 +327,23 @@
     "deviceRegistered": "デバイスを登録",
     "deviceEnrolled": "デバイス登録を発行",
     "transferCreated": "転送を作成",
-    "projectCreated": "プロジェクトを作成"
+    "projectCreated": "プロジェクトを作成",
+    "tunnelCreated": "トンネル作成",
+    "tunnelUpdated": "トンネル更新",
+    "tunnelDeleted": "トンネル削除",
+    "tunnelKeyRotated": "トンネル鍵を再発行",
+    "tunnelAgentOnline": "トンネル agent オンライン",
+    "tunnelAgentOffline": "トンネル agent オフライン",
+    "tunnelQuotaWarn": "トンネル流量警告",
+    "tunnelQuotaExceeded": "トンネル流量超過",
+    "tunnelBudget": "トンネル総予算超過"
   },
   "app": {
     "nav": {
       "overview": "概要",
       "devices": "デバイス",
       "transfers": "転送",
+      "tunnels": "トンネル",
       "relays": "中継",
       "audit": "監査ログ",
       "settings": "設定"
@@ -385,6 +425,33 @@
       "emptyNeedDevices": "まず 2 台以上のデバイスを接続してから、最初の転送を始めましょう。",
       "copyId": "転送 ID をコピー"
     },
+    "tunnels": {
+      "title": "トンネル",
+      "sub": "社内 Web ページを鍵で保護した公開リンクで共有します。",
+      "new": "新規トンネル",
+      "colTunnel": "トンネル",
+      "colUrl": "公開 URL",
+      "colStatus": "状態",
+      "colTraffic": "トラフィック",
+      "emptyTitle": "トンネルはまだありません",
+      "emptyText": "接続済みデバイス上の Web ページを公開できます——デバイスは外向き接続だけを行い、訪問者には鍵で保護されたリンクが渡されます。",
+      "emptyNeedDevice": "まずデバイスを接続してから、そのローカルページのトンネルを作成してください。",
+      "copyUrl": "公開 URL をコピー",
+      "keyOn": "鍵が必要",
+      "keyOff": "オープンリンク",
+      "statusDisabled": "無効",
+      "statusQuota": "上限到達",
+      "actionDisable": "無効化",
+      "actionEnable": "有効化",
+      "actionRotate": "鍵を再発行",
+      "actionDelete": "削除",
+      "deleteConfirm": "トンネル「{name}」を削除しますか？公開リンクはすぐに使えなくなります。",
+      "deleted": "トンネルを削除しました",
+      "updated": "トンネルを更新しました",
+      "unnamed": "名称未設定のトンネル",
+      "usageOf": "{used} / {quota}",
+      "newKeyNote": "新しいアクセスキー（一度だけ表示）"
+    },
     "relays": {
       "title": "中継",
       "sub": "直接接続できないときのための、あなたの中継ノード。",
@@ -428,7 +495,19 @@
       "regTitle": "公開登録",
       "regDesc": "メール認証を済ませた誰もがアカウントを作成できます。",
       "regOn": "公開登録を有効にしました",
-      "regOff": "公開登録を無効にしました"
+      "regOff": "公開登録を無効にしました",
+      "tunnelsTitle": "公開トンネル",
+      "tunnelsDesc": "トンネル Web ページのサーバー全体ガードレール。",
+      "tunEnabled": "トンネルを有効化",
+      "tunEnabledHint": "すべての公開トンネルのマスタースイッチ。",
+      "tunBudget": "月間トラフィック予算",
+      "tunBudgetHint": "全トンネルで共有する月間バイト数。",
+      "tunRate": "訪問者レート制限",
+      "tunRateHint": "訪問者 IP あたりの毎分リクエスト数。",
+      "tunSave": "上限を保存",
+      "tunSaved": "上限を保存しました",
+      "tunOn": "トンネルを有効にしました",
+      "tunOff": "トンネルを無効にしました"
     }
   },
   "err": {

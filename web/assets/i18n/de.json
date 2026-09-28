@@ -33,7 +33,8 @@
     "all": "Alle",
     "refresh": "Aktualisieren",
     "loadMore": "Mehr laden",
-    "noMatch": "Nichts entspricht Ihren Filtern."
+    "noMatch": "Nichts entspricht Ihren Filtern.",
+    "actions": "Aktionen"
   },
   "nav": {
     "what": "Was es ist",
@@ -236,7 +237,7 @@
     "c1": "Tailscale installieren und dem Netzwerk beitreten",
     "c2": "Agent-Token sichern (nur von root lesbar)",
     "c2win": "Agent-Token sichern (nur Administratoren und SYSTEM)",
-    "c3": "meshbridge-agent installieren (zuerst den Build für diese Plattform laden)",
+    "c3": "meshbridge-agent herunterladen und installieren (Architektur automatisch erkannt, Prüfsumme geprüft)",
     "c4": "Agent starten",
     "success": "Gerät erstellt. Die Schlüssel werden nur einmal angezeigt."
   },
@@ -261,6 +262,35 @@
     "submit": "Übertragung erstellen",
     "created": "Übertragung in Warteschlange",
     "needTwo": "Für eine Übertragung brauchen Sie mindestens zwei verbundene Geräte."
+  },
+  "tun": {
+    "title": "Neuer Tunnel",
+    "sub": "Geben Sie einer Intranet-Seite einen schlüsselgeschützten öffentlichen Link.",
+    "needDevice": "Verbinden Sie zuerst ein Gerät.",
+    "device": "Gerät",
+    "name": "Name",
+    "namePh": "z. B. Team-Dashboard",
+    "scheme": "Schema",
+    "port": "Lokaler Port",
+    "portPh": "8080",
+    "host": "Lokaler Host",
+    "hostHint": "IP-Literal auf dem Gerät — nur Loopback oder private Bereiche.",
+    "keyRequired": "Zugriffsschlüssel",
+    "keyOn": "Erforderlich (empfohlen)",
+    "keyOff": "Nicht erforderlich",
+    "keyHint": "Besutzer geben den Schlüssel einmal ein; API-Aufrufe können ihn als Bearer-Token senden.",
+    "submit": "Tunnel anlegen",
+    "onceWarn": "Kopieren Sie den Schlüssel jetzt — er wird nur einmal angezeigt und kann nicht wiederhergestellt werden.",
+    "urlPath": "Öffentlicher Link (Pfad)",
+    "urlSubdomain": "Öffentlicher Link (Subdomain)",
+    "accessKey": "Zugriffsschlüssel",
+    "agentHint": "Der Agent des Geräts übernimmt diesen Tunnel beim nächsten Heartbeat (≈ 30 s) — ohne Neustart.",
+    "success": "Tunnel angelegt",
+    "badPort": "Der Port muss 1–65535 sein.",
+    "sandbox": "Origin-Isolation",
+    "sandboxOn": "Sandbox (empfohlen)",
+    "sandboxOff": "Vollständige Seite (nur vertrauenswürdiger Inhalt)",
+    "sandboxHint": "Pfadmodus-Links teilen den Origin mit der Konsole; die Sandbox verhindert das Auslesen durch Tunnel-Seiten."
   },
   "status": {
     "online": "Online",
@@ -297,13 +327,23 @@
     "deviceRegistered": "Gerät registriert",
     "deviceEnrolled": "Geräteeinschreibung ausgestellt",
     "transferCreated": "Übertragung erstellt",
-    "projectCreated": "Projekt erstellt"
+    "projectCreated": "Projekt erstellt",
+    "tunnelCreated": "Tunnel angelegt",
+    "tunnelUpdated": "Tunnel aktualisiert",
+    "tunnelDeleted": "Tunnel gelöscht",
+    "tunnelKeyRotated": "Tunnelschlüssel erneuert",
+    "tunnelAgentOnline": "Tunnel-Agent online",
+    "tunnelAgentOffline": "Tunnel-Agent offline",
+    "tunnelQuotaWarn": "Tunnel-Traffic-Warnung",
+    "tunnelQuotaExceeded": "Tunnel-Limit überschritten",
+    "tunnelBudget": "Tunnel-Gesamtbudget überschritten"
   },
   "app": {
     "nav": {
       "overview": "Übersicht",
       "devices": "Geräte",
       "transfers": "Übertragungen",
+      "tunnels": "Tunnel",
       "relays": "Relays",
       "audit": "Audit-Log",
       "settings": "Einstellungen"
@@ -387,6 +427,33 @@
       "emptyNeedDevices": "Verbinden Sie mindestens zwei Geräte, dann starten Sie die erste Übertragung.",
       "copyId": "Übertragungs-ID kopieren"
     },
+    "tunnels": {
+      "title": "Tunnel",
+      "sub": "Teilen Sie eine Intranet-Seite über einen schlüsselgeschützten öffentlichen Link.",
+      "new": "Neuer Tunnel",
+      "colTunnel": "Tunnel",
+      "colUrl": "Öffentliche URL",
+      "colStatus": "Status",
+      "colTraffic": "Traffic",
+      "emptyTitle": "Noch keine Tunnel",
+      "emptyText": "Veröffentlichen Sie eine Webseite auf einem verbundenen Gerät — das Gerät wählt sich nach außen ein, Besucher erhalten einen schlüsselgeschützten Link.",
+      "emptyNeedDevice": "Verbinden Sie zuerst ein Gerät und legen Sie dann einen Tunnel für eine seiner lokalen Seiten an.",
+      "copyUrl": "Öffentliche URL kopieren",
+      "keyOn": "Schlüssel erforderlich",
+      "keyOff": "Offener Link",
+      "statusDisabled": "Deaktiviert",
+      "statusQuota": "Limit erreicht",
+      "actionDisable": "Deaktivieren",
+      "actionEnable": "Aktivieren",
+      "actionRotate": "Neuer Schlüssel",
+      "actionDelete": "Löschen",
+      "deleteConfirm": "Tunnel „{name}“ löschen? Der öffentliche Link endet sofort.",
+      "deleted": "Tunnel gelöscht",
+      "updated": "Tunnel aktualisiert",
+      "unnamed": "Unbenannter Tunnel",
+      "usageOf": "{used} / {quota}",
+      "newKeyNote": "Neuer Zugriffsschlüssel (einmalig sichtbar)"
+    },
     "relays": {
       "title": "Relays",
       "sub": "Ihre eigenen Relay-Knoten, für den Fall, dass ein direkter Pfad nicht geht.",
@@ -430,7 +497,19 @@
       "regTitle": "Offene Registrierung",
       "regDesc": "Jeder mit verifizierter E-Mail-Adresse kann ein Konto erstellen.",
       "regOn": "Offene Registrierung ist jetzt geöffnet",
-      "regOff": "Offene Registrierung ist jetzt geschlossen"
+      "regOff": "Offene Registrierung ist jetzt geschlossen",
+      "tunnelsTitle": "Öffentliche Tunnel",
+      "tunnelsDesc": "Serverweite Schutzmaßnahmen für getunnelte Webseiten.",
+      "tunEnabled": "Tunnel aktiv",
+      "tunEnabledHint": "Hauptschalter für alle öffentlichen Tunnel.",
+      "tunBudget": "Monatliches Traffic-Budget",
+      "tunBudgetHint": "Von allen Tunneln geteilte Bytes pro Monat.",
+      "tunRate": "Besucher-Ratenlimit",
+      "tunRateHint": "Anfragen pro Minute und Besucher-IP.",
+      "tunSave": "Limits speichern",
+      "tunSaved": "Limits gespeichert",
+      "tunOn": "Tunnel aktiviert",
+      "tunOff": "Tunnel deaktiviert"
     }
   },
   "err": {

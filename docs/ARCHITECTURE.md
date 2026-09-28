@@ -11,15 +11,17 @@ Internet
   │
   Caddy (:443, auto HTTPS)
   ├── hs.example.com → 127.0.0.1:8080 Headscale (SQLite, DERP embedded DISABLED)
-  └── mesh.example.com → 127.0.0.1:8081 MeshBridge Server (SQLite WAL)
-        ├── REST /api/v1 + Web UI (轻量, 无框架)
-        ├── Auth (Argon2id) / Session (Secure/HttpOnly/SameSite+CSRF) / API token (sha256存hash)
-        ├── Projects/memberships/devices/enrollments/agents/sessions
-        ├── Headscale API client (timeout/retry/ctx) + policy generator (Grants)
-        ├── Scheduler (probe→DIRECT/PEER_RELAY/S3/WAIT; DERP仅<100MiB)
-        ├── Relay registry + quota (monthly_quota, 80% warn / 95% critical)
-        ├── Storage profiles (S3-compatible, secret用master.key加密, 不下发AK给agent)
-        └── Audit log (append-only) + /health (headscale/db/disk/bandwidth/agents/relays)
+  ├── mesh.example.com → 127.0.0.1:8081 MeshBridge Server (SQLite WAL)
+  │     ├── REST /api/v1 + Web UI (轻量, 无框架)
+  │     ├── Auth (Argon2id) / Session (Secure/HttpOnly/SameSite+CSRF) / API token (sha256存hash)
+  │     ├── Projects/memberships/devices/enrollments/agents/sessions
+  │     ├── Headscale API client (timeout/retry/ctx) + policy generator (Grants)
+  │     ├── Scheduler (probe→DIRECT/PEER_RELAY/S3/WAIT; DERP仅<100MiB)
+  │     ├── Relay registry + quota (monthly_quota, 80% warn / 95% critical)
+  │     ├── Storage profiles (S3-compatible, secret用master.key加密, 不下发AK给agent)
+  │     ├── Audit log (append-only) + /health (headscale/db/disk/bandwidth/agents/relays)
+  │     └── Tunnel agent WS endpoint (wss + yamux, 见 docs/TUNNEL.md)
+  └── /t/* + t-*.example.com → 127.0.0.1:8082 Tunnel Gateway (密钥门禁+配额, 仅环回)
 ```
 
 Data Plane (不经 Server):

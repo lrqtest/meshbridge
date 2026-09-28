@@ -33,7 +33,8 @@
     "all": "All",
     "refresh": "Refresh",
     "loadMore": "Load more",
-    "noMatch": "Nothing matches your filters."
+    "noMatch": "Nothing matches your filters.",
+    "actions": "Actions"
   },
   "nav": {
     "what": "What it is",
@@ -236,7 +237,7 @@
     "c1": "Install Tailscale and join your network",
     "c2": "Save the agent token (readable by root only)",
     "c2win": "Save the agent token (Administrators and SYSTEM only)",
-    "c3": "Install meshbridge-agent (download the build for this platform first)",
+    "c3": "Download and install meshbridge-agent (architecture auto-detected, checksum verified)",
     "c4": "Start the agent",
     "success": "Device created. Its keys are shown only once."
   },
@@ -261,6 +262,35 @@
     "submit": "Create transfer",
     "created": "Transfer queued",
     "needTwo": "You need at least two connected devices to create a transfer."
+  },
+  "tun": {
+    "title": "New tunnel",
+    "sub": "Give an intranet web page a public, key-protected link.",
+    "needDevice": "Connect a device first.",
+    "device": "Device",
+    "name": "Name",
+    "namePh": "e.g. Team dashboard",
+    "scheme": "Scheme",
+    "port": "Local port",
+    "portPh": "8080",
+    "host": "Local host",
+    "hostHint": "IP literal on the device — loopback or private ranges only.",
+    "keyRequired": "Access key",
+    "keyOn": "Required (recommended)",
+    "keyOff": "Not required",
+    "keyHint": "Visitors enter the key once; API callers can send it as a Bearer token.",
+    "submit": "Create tunnel",
+    "onceWarn": "Copy the key now — it is shown only once and cannot be recovered.",
+    "urlPath": "Public link (path)",
+    "urlSubdomain": "Public link (subdomain)",
+    "accessKey": "Access key",
+    "agentHint": "The device’s agent picks this tunnel up on its next heartbeat (≈30 s) — no restart needed.",
+    "success": "Tunnel created",
+    "badPort": "Port must be 1–65535.",
+    "sandbox": "Origin isolation",
+    "sandboxOn": "Sandboxed (recommended)",
+    "sandboxOff": "Full page (trusted content only)",
+    "sandboxHint": "Path-mode links share the site origin; sandboxing blocks tunneled pages from reading this console's data."
   },
   "status": {
     "online": "Online",
@@ -297,13 +327,23 @@
     "deviceRegistered": "Device registered",
     "deviceEnrolled": "Device enrollment issued",
     "transferCreated": "Transfer created",
-    "projectCreated": "Project created"
+    "projectCreated": "Project created",
+    "tunnelCreated": "Tunnel created",
+    "tunnelUpdated": "Tunnel updated",
+    "tunnelDeleted": "Tunnel deleted",
+    "tunnelKeyRotated": "Tunnel key rotated",
+    "tunnelAgentOnline": "Tunnel agent online",
+    "tunnelAgentOffline": "Tunnel agent offline",
+    "tunnelQuotaWarn": "Tunnel quota warning",
+    "tunnelQuotaExceeded": "Tunnel quota exceeded",
+    "tunnelBudget": "Tunnel budget exceeded"
   },
   "app": {
     "nav": {
       "overview": "Overview",
       "devices": "Devices",
       "transfers": "Transfers",
+      "tunnels": "Tunnels",
       "relays": "Relays",
       "audit": "Audit log",
       "settings": "Settings"
@@ -325,9 +365,15 @@
       "statTransfers": "Active transfers",
       "statRelays": "Healthy relays",
       "statControl": "Control plane",
-      "devicesNote": { "one": "{count} device registered", "other": "{count} devices registered" },
+      "devicesNote": {
+        "one": "{count} device registered",
+        "other": "{count} devices registered"
+      },
       "noDevices": "No devices yet",
-      "transfersNote": { "one": "{count} transfer in total", "other": "{count} transfers in total" },
+      "transfersNote": {
+        "one": "{count} transfer in total",
+        "other": "{count} transfers in total"
+      },
       "relaysNote": "Peer relays within quota",
       "relaysNone": "None yet — direct paths only",
       "controlOk": "Healthy",
@@ -381,6 +427,33 @@
       "emptyNeedDevices": "Connect at least two devices, then start your first transfer.",
       "copyId": "Copy transfer ID"
     },
+    "tunnels": {
+      "title": "Tunnels",
+      "sub": "Share an intranet web page through a gated public link.",
+      "new": "New tunnel",
+      "colTunnel": "Tunnel",
+      "colUrl": "Public URL",
+      "colStatus": "Status",
+      "colTraffic": "Traffic",
+      "emptyTitle": "No tunnels yet",
+      "emptyText": "Expose a web page running on a connected device — the device dials out, visitors get a key-protected public link.",
+      "emptyNeedDevice": "Connect a device first, then tunnel one of its local web pages.",
+      "copyUrl": "Copy public URL",
+      "keyOn": "Key required",
+      "keyOff": "Open link",
+      "statusDisabled": "Disabled",
+      "statusQuota": "Quota reached",
+      "actionDisable": "Disable",
+      "actionEnable": "Enable",
+      "actionRotate": "New key",
+      "actionDelete": "Delete",
+      "deleteConfirm": "Delete tunnel “{name}”? Its public link stops working immediately.",
+      "deleted": "Tunnel deleted",
+      "updated": "Tunnel updated",
+      "unnamed": "Unnamed tunnel",
+      "usageOf": "{used} / {quota}",
+      "newKeyNote": "New access key (shown once)"
+    },
     "relays": {
       "title": "Relays",
       "sub": "Your own relay nodes, for when a direct path isn't possible.",
@@ -424,7 +497,19 @@
       "regTitle": "Public sign-up",
       "regDesc": "Anyone with a verified email address can create an account.",
       "regOn": "Public sign-up is now open",
-      "regOff": "Public sign-up is now closed"
+      "regOff": "Public sign-up is now closed",
+      "tunnelsTitle": "Public tunnels",
+      "tunnelsDesc": "Server-wide guardrails for tunneled web pages.",
+      "tunEnabled": "Tunnels enabled",
+      "tunEnabledHint": "Master switch for all public tunnels.",
+      "tunBudget": "Monthly traffic budget",
+      "tunBudgetHint": "Bytes per month shared by all tunnels.",
+      "tunRate": "Visitor rate limit",
+      "tunRateHint": "Requests per minute per visitor IP.",
+      "tunSave": "Save limits",
+      "tunSaved": "Limits saved",
+      "tunOn": "Tunnels enabled",
+      "tunOff": "Tunnels disabled"
     }
   },
   "err": {

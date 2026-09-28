@@ -33,7 +33,8 @@
     "all": "Todos",
     "refresh": "Actualizar",
     "loadMore": "Cargar más",
-    "noMatch": "Nada coincide con tus filtros."
+    "noMatch": "Nada coincide con tus filtros.",
+    "actions": "Acciones"
   },
   "nav": {
     "what": "Qué es",
@@ -236,7 +237,7 @@
     "c1": "Instala Tailscale y únete a tu red",
     "c2": "Guarda el token del agente (legible solo por root)",
     "c2win": "Guarda el token del agente (solo Administradores y SYSTEM)",
-    "c3": "Instala meshbridge-agent (descarga antes el build para esta plataforma)",
+    "c3": "Descarga e instala meshbridge-agent (arquitectura detectada automáticamente, suma de verificación comprobada)",
     "c4": "Inicia el agente",
     "success": "Dispositivo creado. Sus claves se muestran solo una vez."
   },
@@ -261,6 +262,35 @@
     "submit": "Crear transferencia",
     "created": "Transferencia en cola",
     "needTwo": "Necesitas al menos dos dispositivos conectados para crear una transferencia."
+  },
+  "tun": {
+    "title": "Nuevo túnel",
+    "sub": "Dale a una página interna un enlace público protegido por clave.",
+    "needDevice": "Conecta primero un dispositivo.",
+    "device": "Dispositivo",
+    "name": "Nombre",
+    "namePh": "p. ej., panel del equipo",
+    "scheme": "Esquema",
+    "port": "Puerto local",
+    "portPh": "8080",
+    "host": "Host local",
+    "hostHint": "IP literal del dispositivo — solo loopback o rangos privados.",
+    "keyRequired": "Clave de acceso",
+    "keyOn": "Requerida (recomendado)",
+    "keyOff": "No requerida",
+    "keyHint": "Los visitantes introducen la clave una vez; las llamadas API pueden enviarla como token Bearer.",
+    "submit": "Crear túnel",
+    "onceWarn": "Copia la clave ahora — solo se muestra una vez y no se puede recuperar.",
+    "urlPath": "Enlace público (ruta)",
+    "urlSubdomain": "Enlace público (subdominio)",
+    "accessKey": "Clave de acceso",
+    "agentHint": "El agente del dispositivo toma este túnel en el próximo latido (≈30 s) — sin reiniciar.",
+    "success": "Túnel creado",
+    "badPort": "El puerto debe estar entre 1 y 65535.",
+    "sandbox": "Aislamiento de origen",
+    "sandboxOn": "Sandbox (recomendado)",
+    "sandboxOff": "Página completa (solo contenido confiable)",
+    "sandboxHint": "Los enlaces en modo ruta comparten origen con la consola; el sandbox impide que las páginas tuneleadas lean sus datos."
   },
   "status": {
     "online": "En línea",
@@ -297,13 +327,23 @@
     "deviceRegistered": "Dispositivo registrado",
     "deviceEnrolled": "Alta de dispositivo emitida",
     "transferCreated": "Transferencia creada",
-    "projectCreated": "Proyecto creado"
+    "projectCreated": "Proyecto creado",
+    "tunnelCreated": "Túnel creado",
+    "tunnelUpdated": "Túnel actualizado",
+    "tunnelDeleted": "Túnel eliminado",
+    "tunnelKeyRotated": "Clave del túnel rotada",
+    "tunnelAgentOnline": "Agente del túnel en línea",
+    "tunnelAgentOffline": "Agente del túnel fuera de línea",
+    "tunnelQuotaWarn": "Aviso de cuota del túnel",
+    "tunnelQuotaExceeded": "Cuota del túnel superada",
+    "tunnelBudget": "Presupuesto global de túneles superado"
   },
   "app": {
     "nav": {
       "overview": "Resumen",
       "devices": "Dispositivos",
       "transfers": "Transferencias",
+      "tunnels": "Túneles",
       "relays": "Relés",
       "audit": "Registro de auditoría",
       "settings": "Ajustes"
@@ -389,6 +429,33 @@
       "emptyNeedDevices": "Conecta al menos dos dispositivos y empieza tu primera transferencia.",
       "copyId": "Copiar ID de la transferencia"
     },
+    "tunnels": {
+      "title": "Túneles",
+      "sub": "Comparte una página interna mediante un enlace público protegido por clave.",
+      "new": "Nuevo túnel",
+      "colTunnel": "Túnel",
+      "colUrl": "URL pública",
+      "colStatus": "Estado",
+      "colTraffic": "Tráfico",
+      "emptyTitle": "Aún no hay túneles",
+      "emptyText": "Expón una página web que corre en un dispositivo conectado — el dispositivo solo realiza conexiones salientes y los visitantes reciben un enlace protegido por clave.",
+      "emptyNeedDevice": "Conecta primero un dispositivo y luego crea un túnel para una de sus páginas locales.",
+      "copyUrl": "Copiar URL pública",
+      "keyOn": "Clave requerida",
+      "keyOff": "Enlace abierto",
+      "statusDisabled": "Desactivado",
+      "statusQuota": "Cuota agotada",
+      "actionDisable": "Desactivar",
+      "actionEnable": "Activar",
+      "actionRotate": "Nueva clave",
+      "actionDelete": "Eliminar",
+      "deleteConfirm": "¿Eliminar el túnel “{name}”? Su enlace público dejará de funcionar de inmediato.",
+      "deleted": "Túnel eliminado",
+      "updated": "Túnel actualizado",
+      "unnamed": "Túnel sin nombre",
+      "usageOf": "{used} / {quota}",
+      "newKeyNote": "Nueva clave de acceso (se muestra una vez)"
+    },
     "relays": {
       "title": "Relés",
       "sub": "Tus propios nodos de relé, para cuando una ruta directa no es posible.",
@@ -432,7 +499,19 @@
       "regTitle": "Registro público",
       "regDesc": "Cualquier persona con correo verificado puede crear una cuenta.",
       "regOn": "El registro público está ahora abierto",
-      "regOff": "El registro público está ahora cerrado"
+      "regOff": "El registro público está ahora cerrado",
+      "tunnelsTitle": "Túneles públicos",
+      "tunnelsDesc": "Protecciones de todo el servidor para páginas web tuneleadas.",
+      "tunEnabled": "Túneles activados",
+      "tunEnabledHint": "Interruptor maestro de todos los túneles públicos.",
+      "tunBudget": "Presupuesto mensual de tráfico",
+      "tunBudgetHint": "Bytes al mes compartidos por todos los túneles.",
+      "tunRate": "Límite de visitantes",
+      "tunRateHint": "Peticiones por minuto por IP de visitante.",
+      "tunSave": "Guardar límites",
+      "tunSaved": "Límites guardados",
+      "tunOn": "Túneles activados",
+      "tunOff": "Túneles desactivados"
     }
   },
   "err": {

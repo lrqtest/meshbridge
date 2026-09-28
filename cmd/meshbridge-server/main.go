@@ -4,13 +4,17 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,6 +30,7 @@ import (
 	"github.com/meshbridge/meshbridge/internal/mailer"
 	"github.com/meshbridge/meshbridge/internal/secret"
 	"github.com/meshbridge/meshbridge/internal/settings"
+	"github.com/meshbridge/meshbridge/internal/tunnel"
 	"golang.org/x/term"
 )
 
@@ -93,7 +98,9 @@ func main() {
 	srv.BaseURL = os.Getenv("MESH_BASE_URL")
 	// Master key unlocks secret encryption (SMTP passwords, …). Without it the
 	// web onboarding mail features stay disabled (log once, keep serving API).
+	var masterKey []byte
 	if mk, err := secret.LoadKey(cfg.MasterKeyPath); err == nil {
+		masterKey = mk
 		srv.MasterKey = mk
 		srv.Mailer = &mailer.Service{
 			DB: database,
@@ -120,6 +127,30 @@ func main() {
 	} else {
 		log.Printf("WARN: master key unavailable (%v) — SMTP/web onboarding disabled", err)
 	}
+
+	// Tunnel gateway (visitor-facing reverse tunnel endpoint, loopback only).
+	// Its gate-cookie secret derives from the master key; without one we use
+	// an ephemeral key (visitors re-enter keys after every restart).
+	gateSecret := sha256.Sum256(append(append([]byte("meshbridge-tunnel-gate:"), masterKey...), []byte(os.Getenv("MESH_TUNNEL_GATE_SECRET"))...))
+	if len(masterKey) == 0 {
+		log.Printf("WARN: ephemeral tunnel gate secret — gate cookies do not survive restarts")
+		eph := make([]byte, 32)
+		_, _ = rand.Read(eph)
+		gateSecret = sha256.Sum256(eph)
+	}
+	baseDomain := cfg.TunnelBaseDomain
+	if baseDomain == "" {
+		if u, err := url.Parse(srv.BaseURL); err == nil && u.Hostname() != "" {
+			baseDomain = u.Hostname()
+		}
+	}
+	gw := tunnel.NewGateway(tunnel.GatewayConfig{
+		DB:         database,
+		Secret:     gateSecret[:],
+		BaseURL:    srv.BaseURL,
+		BaseDomain: baseDomain,
+	})
+	srv.Gateway = gw
 	// Health reflects real Headscale reachability when an API key is present.
 	if cfg.HeadscaleURL != "" {
 		hs := headscale.New(cfg.HeadscaleURL, cfg.HeadscaleAPIKey)
@@ -136,6 +167,23 @@ func main() {
 		Addr:              cfg.ListenAddr,
 		Handler:           srv.Mux,
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+	// Visitor-facing tunnel gateway on its own loopback listener so proxy
+	// traffic never competes with API connection limits (Caddy routes /t/*
+	// and t-*.domain here). No WriteTimeout: proxied bodies may be slow.
+	if cfg.GatewayListenAddr != "" {
+		gwSrv := &http.Server{
+			Addr:              cfg.GatewayListenAddr,
+			Handler:           gw.Handler(),
+			ReadHeaderTimeout: 15 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		ln, err := net.Listen("tcp", cfg.GatewayListenAddr)
+		if err != nil {
+			log.Fatalf("tunnel gateway listen: %v", err)
+		}
+		log.Printf("tunnel gateway listening on %s (base domain %q)", cfg.GatewayListenAddr, baseDomain)
+		go func() { log.Fatal(gwSrv.Serve(ln)) }()
 	}
 	log.Printf("meshbridge-server listening on %s (data=%s)", cfg.ListenAddr, cfg.DataDir)
 	log.Fatal(httpSrv.ListenAndServe())

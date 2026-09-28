@@ -36,6 +36,8 @@
 - [x] Docs: ARCHITECTURE/SECURITY/THREAT-MODEL/TRANSFER/RELAY/DEPLOYMENT/OPERATIONS/TEST-PLAN/TROUBLESHOOTING/BACKUP 等
 - [x] `go test ./...` + `go vet` 本地通过
 - [x] **2026-09-25 全面安全审计 + 修复 (commit 850bf0c)**: 见下方 Audit 2026-09-25
+- [x] **2026-09-27 安全审阅修复 (5 项)**: ① 路径模式与控制台同源 → 注入 CSP sandbox(不透明源, token 不可读, 默认开+可关+PATCH 即时生效) ② 慢上传 502 → 响应头超时改为 30min 绝对上限且不覆盖请求体写入(网络慢/上游消费慢两种形态均有回归测试) ③ gate 页 CSS 被反向代理切分吞掉 → 内联 nonce 样式, 自包含 ④ Caddyfile `t-*` 通配符无效 → 改 `*.域名` 标签 ⑤ 隧道全局设置(总开关/总预算/限速)补管理员 API `GET/PUT /api/v1/tunnels/settings` + 控制台设置卡。另清死代码(Detach/Connected), 修 INSERT 列错位(sandbox 迁移引入, 会在创建隧道时 panic)
+- [x] **2026-09-26 公开 Web 隧道 (内网网页暴露) 全栈实现**: agent 出站 wss + yamux 流多路复用 (`coder/websocket` v1.8.15 + `hashicorp/yamux` v0.1.2), 网关 :8082 (密钥门禁/HMAC cookie/Bearer/限速/配额/头清洗/101 升级透传), migration 003 (tunnels + tunnel_usage), API CRUD + cert-ask, 控制台隧道页 + 10 语言 i18n (check-i18n 451 键 0 问题), 端到端测试 3 个全绿 (internal/tunnel)。设计/运维/限制: docs/TUNNEL.md
 
 ## Audit 2026-09-25 (全源码人工审计, 已修复并测试)
 
@@ -96,7 +98,7 @@
 - 二进制 go:embed 内嵌 web/; make build 自动 sync; Caddy @mesh path: / /api/v1/* /favicon.ico /login /register /setup /forgot /app
 - **生产实测通过**: UI 登录（截图验证）、设备接入弹窗（真实 hskey-auth preauth 签发+安装命令）、深链路由、审计/设备表渲染。实测发现并修复: 前端 api() 把 GET+null body 序列化导致所有 GET 抛错（控制台曾不可用）+ 深链未归一化 + headscale CreateUser 重复建号
 - master key: /etc/meshbridge/master.key (640 root:meshbridge); SMTP 密码加密存 settings.smtp_password_enc, 接口永不回显
-- **SMTP 未通**: 用户提供的 QQ 授权码 535 被拒（Account abnormal/password incorrect/服务未开启）, 465/587 双端口均验证为授权码本身问题。→ 用户需到 QQ邮箱 设置-账号 开启 SMTP 并生成新授权码, 然后在网页"设置"里填入（密码留空=保留旧值）, 点"保存并发测试邮件"验证。未通期间注册/忘记密码不可用, setup 向导第2步可跳过
+- **SMTP 已通 (2026-09-27)**: 用户生成了新 QQ 授权码, 已保存生产 (smtp.qq.com:465 / rqluo@qq.com), 实测发信 ok。注册/忘记密码/setup 向导全链路可用。加密存储于 settings.smtp_password_enc, 接口永不回显
 
 ## Deployment State (2026-09-26 更新)
 
@@ -143,3 +145,4 @@
 3. 采购 JP relay → `install-relay.sh` + grant `tailscale.com/cap/relay` → Peer Relay 10GB 测试 (relay vnStat ↑, control VPS ≈ MB 级).
 4. 配置 S3 profile → S3 fallback 测试 (upload/retry/download/hash).
 5. Backup/restore 实测 → Phase 12 security review → 生产 runbook.
+6. ✅ **隧道功能已部署生产 (2026-09-27)**: 新二进制 + migration 003 + server.env(MESH_BASE_URL/MESH_TUNNEL_BASE_DOMAIN/MESH_GATEWAY_LISTEN) + Caddy(/t/*→8082, *.mineai.top 站块+on_demand_tls ask 已配)。**生产 E2E 实测通过**: 本机 agent 连 mineai.top → 建隧道 → 公网访客 https://mineai.top/t/<slug>/ 带密钥取到本机 8767 页面内容; cert-ask 真隧道 200/陌生域名 404。备份在 /root/backup-*。**待用户**: ① `*.mineai.top` 通配 A 记录 → 36.151.144.201 (子域名模式生效, cert-ask 已就位) ② SMTP 授权码修复(新用户注册)。设备 renqing-mbp (94e676a6408c1dba) + 隧道 production-e2e 为本次测试创建, agent 跑在用户 Mac 上。

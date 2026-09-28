@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="zh-CN" dir="ltr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -351,6 +351,7 @@
       <a href="#/app/overview" data-nav="overview"><svg class="icon"><use href="#i-grid"/></svg><span data-i18n="app.nav.overview"></span></a>
       <a href="#/app/devices" data-nav="devices"><svg class="icon"><use href="#i-device"/></svg><span data-i18n="app.nav.devices"></span><span class="count" data-count="devices"></span></a>
       <a href="#/app/transfers" data-nav="transfers"><svg class="icon"><use href="#i-transfer"/></svg><span data-i18n="app.nav.transfers"></span><span class="count" data-count="transfers"></span></a>
+      <a href="#/app/tunnels" data-nav="tunnels"><svg class="icon"><use href="#i-globe"/></svg><span data-i18n="app.nav.tunnels"></span></a>
       <a href="#/app/relays" data-nav="relays"><svg class="icon"><use href="#i-relay"/></svg><span data-i18n="app.nav.relays"></span></a>
       <a href="#/app/audit" data-nav="audit"><svg class="icon"><use href="#i-audit"/></svg><span data-i18n="app.nav.audit"></span></a>
       <a href="#/app/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg><span data-i18n="app.nav.settings"></span></a>
@@ -436,6 +437,15 @@
         <div class="table-wrap" id="tr-table"></div>
       </section>
 
+      <!-- tunnels -->
+      <section class="page" data-page="tunnels" hidden>
+        <div class="toolbar">
+          <span class="spacer"></span>
+          <button class="btn btn-primary btn-sm" type="button" data-open="tunnel"><svg class="icon"><use href="#i-plus"/></svg><span data-i18n="app.tunnels.new"></span></button>
+        </div>
+        <div class="table-wrap" id="tu-table"></div>
+      </section>
+
       <!-- relays -->
       <section class="page" data-page="relays" hidden>
         <div id="relay-list"></div>
@@ -484,6 +494,23 @@
           <div class="panel set-card" data-admin>
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.mailTitle"></h2><p class="set-desc" data-i18n="app.settings.mailDesc"></p></div><span class="pill" id="smtp-status"></span></div>
             <div data-mount="smtp-settings"></div>
+          </div>
+
+          <div class="panel set-card" data-admin>
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.tunnelsTitle"></h2><p class="set-desc" data-i18n="app.settings.tunnelsDesc"></p></div></div>
+            <div class="set-row">
+              <div class="set-k"><b data-i18n="app.settings.tunEnabled"></b><span data-i18n="app.settings.tunEnabledHint"></span></div>
+              <button class="switch" type="button" role="switch" aria-checked="false" id="set-tunnels" data-i18n-attr="aria-label:app.settings.tunEnabled"></button>
+            </div>
+            <div class="set-row">
+              <div class="set-k"><b data-i18n="app.settings.tunBudget"></b><span data-i18n="app.settings.tunBudgetHint"></span></div>
+              <input class="input mono" id="set-tun-budget" type="text" inputmode="numeric" autocomplete="off" data-i18n-attr="aria-label:app.settings.tunBudget">
+            </div>
+            <div class="set-row">
+              <div class="set-k"><b data-i18n="app.settings.tunRate"></b><span data-i18n="app.settings.tunRateHint"></span></div>
+              <input class="input mono" id="set-tun-rate" type="text" inputmode="numeric" autocomplete="off" data-i18n-attr="aria-label:app.settings.tunRate">
+            </div>
+            <div class="form-actions"><button class="btn btn-outline btn-sm" type="button" id="set-tun-save" data-i18n="app.settings.tunSave"></button></div>
           </div>
 
           <div class="panel set-card" data-admin>
@@ -545,6 +572,53 @@
         <button class="btn btn-primary" type="submit" data-i18n="tf.submit"></button>
       </div>
     </form>
+  </div>
+</div>
+
+<div class="modal" id="modal-tunnel" role="dialog" aria-modal="true" aria-labelledby="tu-title" hidden>
+  <div class="modal-scrim" data-close-modal></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <div><h2 class="display modal-title" id="tu-title" data-i18n="tun.title"></h2><p class="modal-sub" data-i18n="tun.sub"></p></div>
+      <button class="icon-btn modal-close" type="button" data-close-modal data-i18n-attr="aria-label:common.close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="form-tunnel" novalidate>
+      <div class="callout warn" data-role="need" hidden><svg class="icon"><use href="#i-info"/></svg><div data-i18n="tun.needDevice"></div></div>
+      <label class="field"><span class="label" data-i18n="tun.device"></span>
+        <span class="select-wrap"><select class="select" name="device" data-i18n-attr="aria-label:tun.device"></select><svg class="icon chev"><use href="#i-chevron"/></svg></span></label>
+      <label class="field"><span class="label"><span data-i18n="tun.name"></span><span class="opt" data-i18n="common.optional"></span></span>
+        <input class="input" name="name" maxlength="64" autocomplete="off" data-i18n-attr="placeholder:tun.namePh"></label>
+      <div class="grid-2">
+        <label class="field"><span class="label" data-i18n="tun.scheme"></span>
+          <span class="select-wrap"><select class="select" name="scheme"><option value="http">http</option><option value="https">https</option></select><svg class="icon chev"><use href="#i-chevron"/></svg></span></label>
+        <label class="field"><span class="label" data-i18n="tun.port"></span>
+          <input class="input mono" name="port" inputmode="numeric" autocomplete="off" required data-i18n-attr="placeholder:tun.portPh"></label>
+      </div>
+      <label class="field"><span class="label" data-i18n="tun.host"></span>
+        <input class="input mono" name="host" value="127.0.0.1" autocomplete="off" spellcheck="false">
+        <span class="hint" data-i18n="tun.hostHint"></span></label>
+      <label class="field"><span class="label" data-i18n="tun.sandbox"></span>
+        <span class="select-wrap"><select class="select" name="sandbox"><option value="1" data-i18n="tun.sandboxOn"></option><option value="0" data-i18n="tun.sandboxOff"></option></select><svg class="icon chev"><use href="#i-chevron"/></svg></span>
+        <span class="hint" data-i18n="tun.sandboxHint"></span></label>
+      <label class="field"><span class="label" data-i18n="tun.keyRequired"></span>
+        <span class="select-wrap"><select class="select" name="keyRequired"><option value="1" data-i18n="tun.keyOn"></option><option value="0" data-i18n="tun.keyOff"></option></select><svg class="icon chev"><use href="#i-chevron"/></svg></span>
+        <span class="hint" data-i18n="tun.keyHint"></span></label>
+      <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+      <div class="modal-foot">
+        <button class="btn btn-quiet" type="button" data-close-modal data-i18n="common.cancel"></button>
+        <button class="btn btn-primary" type="submit" data-i18n="tun.submit"></button>
+      </div>
+    </form>
+    <div class="enroll-out" data-role="tun-out" hidden>
+      <div class="callout warn"><svg class="icon"><use href="#i-key"/></svg><div data-i18n="tun.onceWarn"></div></div>
+      <div class="kv-block"><span class="label" data-i18n="tun.urlPath"></span>
+        <div class="secret-row"><a class="mono" data-role="url-path" target="_blank" rel="noopener"></a><button class="copy-btn" type="button" data-copy="url-path"><svg class="icon"><use href="#i-copy"/></svg><span data-i18n="common.copy"></span></button></div></div>
+      <div class="kv-block" data-role="sub-block" hidden><span class="label" data-i18n="tun.urlSubdomain"></span>
+        <div class="secret-row"><a class="mono" data-role="url-sub" target="_blank" rel="noopener"></a><button class="copy-btn" type="button" data-copy="url-sub"><svg class="icon"><use href="#i-copy"/></svg><span data-i18n="common.copy"></span></button></div></div>
+      <div class="kv-block"><span class="label" data-i18n="tun.accessKey"></span>
+        <div class="secret-row"><span class="mono hot" data-role="key"></span><button class="copy-btn" type="button" data-copy="key"><svg class="icon"><use href="#i-copy"/></svg><span data-i18n="common.copy"></span></button></div></div>
+      <p class="hint" data-i18n="tun.agentHint"></p>
+    </div>
   </div>
 </div>
 

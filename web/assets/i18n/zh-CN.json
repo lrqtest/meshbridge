@@ -33,7 +33,8 @@
     "all": "全部",
     "refresh": "刷新",
     "loadMore": "加载更多",
-    "noMatch": "没有符合筛选条件的结果。"
+    "noMatch": "没有符合筛选条件的结果。",
+    "actions": "操作"
   },
   "nav": {
     "what": "它是什么",
@@ -236,7 +237,7 @@
     "c1": "安装 Tailscale 并加入你的网络",
     "c2": "保存 Agent 令牌（仅 root 可读）",
     "c2win": "保存 Agent 令牌（仅管理员与 SYSTEM 可读）",
-    "c3": "安装 meshbridge-agent（先下载对应平台的构建）",
+    "c3": "下载并安装 meshbridge-agent（自动识别架构，校验哈希）",
     "c4": "启动 Agent",
     "success": "设备已创建。密钥只显示这一次。"
   },
@@ -261,6 +262,35 @@
     "submit": "创建传输",
     "created": "传输已排队",
     "needTwo": "至少需要两台已连接的设备才能创建传输。"
+  },
+  "tun": {
+    "title": "新建隧道",
+    "sub": "给内网网页一个受密钥保护的公开链接。",
+    "needDevice": "请先接入一台设备。",
+    "device": "设备",
+    "name": "名称",
+    "namePh": "例如：团队看板",
+    "scheme": "协议",
+    "port": "本地端口",
+    "portPh": "8080",
+    "host": "本地地址",
+    "hostHint": "设备上的 IP 字面量——仅限环回或私网地址段。",
+    "keyRequired": "访问密钥",
+    "keyOn": "需要（推荐）",
+    "keyOff": "不需要",
+    "keyHint": "访客输入一次密钥即可；程序调用可用 Bearer 令牌携带。",
+    "submit": "创建隧道",
+    "onceWarn": "立即保存密钥——只显示这一次，无法找回。",
+    "urlPath": "公开链接（路径）",
+    "urlSubdomain": "公开链接（子域名）",
+    "accessKey": "访问密钥",
+    "agentHint": "设备上的 agent 会在下次心跳（约 30 秒）自动接上这条隧道，无需重启。",
+    "success": "隧道已创建",
+    "badPort": "端口必须是 1–65535。",
+    "sandbox": "同源隔离",
+    "sandboxOn": "沙箱（推荐）",
+    "sandboxOff": "完整页面（仅限可信内容）",
+    "sandboxHint": "路径模式链接与控制台同源；沙箱可阻止隧道页面读取控制台的数据。"
   },
   "status": {
     "online": "在线",
@@ -297,13 +327,23 @@
     "deviceRegistered": "注册设备",
     "deviceEnrolled": "签发设备接入",
     "transferCreated": "创建传输",
-    "projectCreated": "创建项目"
+    "projectCreated": "创建项目",
+    "tunnelCreated": "隧道已创建",
+    "tunnelUpdated": "隧道已更新",
+    "tunnelDeleted": "隧道已删除",
+    "tunnelKeyRotated": "隧道密钥已轮换",
+    "tunnelAgentOnline": "隧道 agent 已上线",
+    "tunnelAgentOffline": "隧道 agent 已离线",
+    "tunnelQuotaWarn": "隧道流量预警",
+    "tunnelQuotaExceeded": "隧道流量超限",
+    "tunnelBudget": "隧道总预算超限"
   },
   "app": {
     "nav": {
       "overview": "总览",
       "devices": "设备",
       "transfers": "传输",
+      "tunnels": "隧道",
       "relays": "中继",
       "audit": "审计日志",
       "settings": "设置"
@@ -385,6 +425,33 @@
       "emptyNeedDevices": "先接入至少两台设备，再发起第一次传输。",
       "copyId": "复制传输 ID"
     },
+    "tunnels": {
+      "title": "隧道",
+      "sub": "把内网网页通过带密钥门禁的公开链接分享出去。",
+      "new": "新建隧道",
+      "colTunnel": "隧道",
+      "colUrl": "公开链接",
+      "colStatus": "状态",
+      "colTraffic": "流量",
+      "emptyTitle": "还没有隧道",
+      "emptyText": "把已接入设备上运行的网页暴露到公网——设备主动外连，访客拿到的是受密钥保护的公开链接。",
+      "emptyNeedDevice": "请先接入一台设备，再为它的本地网页创建隧道。",
+      "copyUrl": "复制公开链接",
+      "keyOn": "需要密钥",
+      "keyOff": "开放链接",
+      "statusDisabled": "已停用",
+      "statusQuota": "流量已满",
+      "actionDisable": "停用",
+      "actionEnable": "启用",
+      "actionRotate": "换新密钥",
+      "actionDelete": "删除",
+      "deleteConfirm": "删除隧道“{name}”？它的公开链接会立即失效。",
+      "deleted": "隧道已删除",
+      "updated": "隧道已更新",
+      "unnamed": "未命名隧道",
+      "usageOf": "{used} / {quota}",
+      "newKeyNote": "新访问密钥（仅显示一次）"
+    },
     "relays": {
       "title": "中继",
       "sub": "你自己的中继节点，直连走不通时启用。",
@@ -428,7 +495,19 @@
       "regTitle": "公开注册",
       "regDesc": "任何验证过邮箱的人都可以注册账号。",
       "regOn": "公开注册现已开启",
-      "regOff": "公开注册现已关闭"
+      "regOff": "公开注册现已关闭",
+      "tunnelsTitle": "公开隧道",
+      "tunnelsDesc": "隧道网页的服务器级护栏。",
+      "tunEnabled": "启用隧道",
+      "tunEnabledHint": "所有公开隧道的总开关。",
+      "tunBudget": "每月流量预算",
+      "tunBudgetHint": "全部隧道共享的每月字节数。",
+      "tunRate": "访客限速",
+      "tunRateHint": "每个访客 IP 每分钟请求数。",
+      "tunSave": "保存限额",
+      "tunSaved": "限额已保存",
+      "tunOn": "隧道已启用",
+      "tunOff": "隧道已停用"
     }
   },
   "err": {

@@ -19,6 +19,7 @@ import (
 	"github.com/meshbridge/meshbridge/internal/mailer"
 	"github.com/meshbridge/meshbridge/internal/metrics"
 	"github.com/meshbridge/meshbridge/internal/policy"
+	"github.com/meshbridge/meshbridge/internal/tunnel"
 )
 
 type Server struct {
@@ -30,6 +31,7 @@ type Server struct {
 	Mailer        *mailer.Service
 	MasterKey     []byte
 	BaseURL       string // public base URL, e.g. https://mineai.top
+	Gateway       *tunnel.Gateway
 	loginFailures *loginLimiter
 }
 
@@ -75,6 +77,7 @@ func (s *Server) routes() {
 	s.Mux.HandleFunc("/api/v1/transfers", s.requireAuth(s.handleTransfers))
 	s.Mux.HandleFunc("/api/v1/relays", s.requireAuth(s.handleRelays))
 	s.Mux.HandleFunc("/api/v1/audit", s.requireAuth(s.handleAudit))
+	s.routesTunnels()
 	s.Mux.HandleFunc("/health", s.handleHealth)
 }
 
@@ -352,7 +355,19 @@ func (s *Server) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 			_, _ = s.DB.Exec(`INSERT INTO path_observations(src_device_id,dst_device_id,class,created_at) VALUES(?,'',?,?)`,
 				tokenDevice, p, now)
 		}
-		writeJSON(w, map[string]any{"ok": true, "server_time": now})
+		// Active tunnels for this device: the agent reconciles its outbound
+		// connections against this list (config-driven, no agent restart).
+		tunnels := []tunnel.AgentConfig{}
+		if rows, err := s.DB.Query(`SELECT id,target_scheme,target_host,target_port FROM tunnels WHERE device_id=? AND status='active'`, tokenDevice); err == nil {
+			for rows.Next() {
+				var t tunnel.AgentConfig
+				if rows.Scan(&t.ID, &t.Scheme, &t.Host, &t.Port) == nil {
+					tunnels = append(tunnels, t)
+				}
+			}
+			rows.Close()
+		}
+		writeJSON(w, map[string]any{"ok": true, "server_time": now, "tunnels": tunnels})
 	})(w, r)
 }
 

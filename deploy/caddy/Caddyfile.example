@@ -1,6 +1,13 @@
 # Caddyfile.example — copy to /etc/caddy/Caddyfile, replace domains.
 # Requires DNS A/AAAA for both domains -> VPS IP first (ACME).
 
+# Global: on-demand TLS ask endpoint approves only real tunnel subdomains.
+{
+	on_demand_tls {
+		ask http://127.0.0.1:8081/api/v1/tunnels/cert-ask
+	}
+}
+
 hs.example.com {
 	# Plain reverse_proxy per official Headscale recommendation (h2/websocket ok).
 	reverse_proxy 127.0.0.1:8080
@@ -11,10 +18,30 @@ hs.example.com {
 }
 
 mesh.example.com {
+	# Public web tunnels (path mode: https://mesh.example.com/t/<slug>/).
+	handle /t/* {
+		reverse_proxy 127.0.0.1:8082
+	}
 	reverse_proxy 127.0.0.1:8081
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
+	}
+}
+
+# Subdomain mode for tunnels. Caddy/Cert wildcards must occupy an entire
+# DNS label, so the site label is *.example.com (NOT t-*.example.com); the
+# gateway itself 404s any host that is not t-<hex12>.example.com.
+# Certificates are issued on demand; the ask endpoint above gates issuance
+# to live tunnels only.
+*.example.com {
+	tls {
+		on_demand
+	}
+	reverse_proxy 127.0.0.1:8082
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
 	}
 }

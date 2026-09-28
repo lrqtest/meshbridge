@@ -91,12 +91,14 @@
     return b ? b.code : null;
   }
   function detectLang() {
+    // Only an explicit choice (URL ?lang= or a previous pick, saved) selects a
+    // language; everyone else gets Chinese, this deployment's primary language.
     const q = new URLSearchParams(location.search).get("lang");
-    for (const cand of [q, store.get("mb_lang"), ...(navigator.languages || [navigator.language])]) {
+    for (const cand of [q, store.get("mb_lang")]) {
       const m = matchLang(cand);
       if (m) return m;
     }
-    return "en";
+    return "zh-CN";
   }
 
   const I18N = {
@@ -912,6 +914,7 @@
   function enrollLines(os, r) {
     const origin = location.origin, key = r.preauth_key || "<PREAUTH_KEY>";
     const tok = r.agent_token, id = r.device_id, host = r.hostname;
+    const dl = origin + "/dl";
     const c = (n, k) => ["c", `# ${n}) ${t(k)}`];
     if (os === "windows") {
       return [
@@ -924,6 +927,7 @@
         ["", `Set-Content -NoNewline -Path "$dir\\agent.token" -Value '${tok}'`],
         ["", 'icacls "$dir\\agent.token" /inheritance:r /grant:r "*S-1-5-18:F" "*S-1-5-32-544:F" | Out-Null'],
         ["", ""], c(3, "enroll.c3"),
+        ["", `Invoke-WebRequest -Uri "${dl}/meshbridge-agent-windows-amd64.exe" -OutFile "meshbridge-agent.exe"`],
         ["", 'New-Item -ItemType Directory -Force -Path "$env:ProgramFiles\\MeshBridge" | Out-Null'],
         ["", 'Copy-Item .\\meshbridge-agent.exe "$env:ProgramFiles\\MeshBridge\\"'],
         ["", ""], c(4, "enroll.c4"),
@@ -934,6 +938,7 @@
       ? [["", "brew install tailscale"], ["", "sudo brew services start tailscale"]]
       : [["", "curl -fsSL https://tailscale.com/install.sh | sh"]];
     const bin = os === "macos" ? [["", "sudo install -d /usr/local/bin"]] : [];
+    const sum = os === "macos" ? "shasum -a 256 -c -" : "sha256sum -c -";
     return [
       c(1, "enroll.c1"), ...ts,
       ["", `sudo tailscale up --login-server ${origin} --hostname ${host} --authkey ${key}`],
@@ -941,8 +946,12 @@
       ["", "sudo install -d -m 700 /etc/meshbridge"],
       ["", `printf '%s\\n' '${tok}' | sudo tee /etc/meshbridge/agent.token >/dev/null`],
       ["", "sudo chmod 600 /etc/meshbridge/agent.token"],
-      ["", ""], c(3, "enroll.c3"), ...bin,
-      ["", "sudo install -m 755 meshbridge-agent /usr/local/bin/"],
+      ["", ""], c(3, "enroll.c3"),
+      ["", 'ARCH=$(uname -m); case "$ARCH" in x86_64) A=amd64;; aarch64|arm64) A=arm64;; *) echo "unsupported: $ARCH"; exit 1;; esac'],
+      ["", `curl -fL -o "meshbridge-agent-${os}-$A" "${dl}/meshbridge-agent-${os}-$A"`],
+      ["", `grep "meshbridge-agent-${os}-$A" <(curl -fsSL "${dl}/SHA256SUMS") | ${sum}`],
+      ...bin,
+      ["", `sudo install -m 755 "meshbridge-agent-${os}-$A" /usr/local/bin/meshbridge-agent`],
       ["", ""], c(4, "enroll.c4"),
       ["", `sudo meshbridge-agent --controller ${origin} --device-id ${id} --token-file /etc/meshbridge/agent.token`],
     ];
@@ -1034,21 +1043,90 @@
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
   });
-  let modalEnroll = null;
+  let modalEnroll = null, modalTunnel = null;
   function openFeature(name) {
     if (name === "enroll") {
       if (!modalEnroll) modalEnroll = mountEnroll($('[data-mount="enroll-modal"]'));
       modalEnroll.reset();
       openModal("modal-enroll");
     } else if (name === "transfer") openTransferModal();
+    else if (name === "tunnel") {
+      if (!modalTunnel) modalTunnel = mountTunnel();
+      modalTunnel.reset();
+      openModal("modal-tunnel");
+    }
+  }
+
+  // ── tunnel create modal ──
+  function mountTunnel() {
+    const m = $("#modal-tunnel");
+    const f = $("#form-tunnel"), out = $('[data-role="tun-out"]', m), need = $('[data-role="need"]', f), btn = $("[type=submit]", f);
+    const fillDevices = () => {
+      const devs = D.devices || [];
+      need.hidden = !!devs.length;
+      const sel = f.elements.device;
+      sel.replaceChildren(...devs.map((d) => h("option", { value: d.id }, d.hostname)));
+      if (devs.length === 1) sel.value = devs[0].id;
+    };
+    out.addEventListener("click", (e) => {
+      const c = e.target.closest("[data-copy]");
+      if (c) copyText($(`[data-role="${c.dataset.copy}"]`, out).textContent, c);
+    });
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      showErr(f, "");
+      const el = f.elements;
+      const port = parseInt(el.port.value, 10);
+      if (!el.device.value) { showErr(f, t("err.pickDevices")); return; }
+      if (!Number.isInteger(port) || port < 1 || port > 65535) { showErr(f, t("tun.badPort")); el.port.focus(); return; }
+      await busy(btn, async () => {
+        try {
+          const d = await api("POST", "/api/v1/tunnels", {
+            device_id: el.device.value,
+            name: el.name.value.trim(),
+            target_scheme: el.scheme.value,
+            target_host: el.host.value.trim() || "127.0.0.1",
+            target_port: port,
+            key_required: el.keyRequired.value === "1",
+            sandbox: el.sandbox.value === "1",
+          });
+          const tun = d.tunnel;
+          const pathEl = $('[data-role="url-path"]', out);
+          pathEl.href = location.origin + tun.url_path;
+          pathEl.textContent = location.origin + tun.url_path;
+          const subEl = $('[data-role="url-sub"]', out);
+          const subBlock = $('[data-role="sub-block"]', out);
+          if (tun.url_subdomain) {
+            const sub = location.protocol + "//" + tun.url_subdomain + (location.port ? ":" + location.port : "");
+            subBlock.hidden = false;
+            subEl.href = sub;
+            subEl.textContent = sub;
+          } else subBlock.hidden = true;
+          $('[data-role="key"]', out).textContent = d.access_key || "—";
+          out.hidden = false;
+          f.hidden = true;
+          toast(t("tun.success"));
+          D.tunnels = null;
+        } catch (err) { showErr(f, errText(err)); }
+      });
+    });
+    return {
+      reset() {
+        f.reset(); f.hidden = false; out.hidden = true; showErr(f, "");
+        fillDevices();
+        const firstInput = $("input,select", f);
+        if (firstInput) setTimeout(() => firstInput.focus(), 30);
+      },
+    };
   }
 
   // ───────────────────────── console data ─────────────────────────
-  const D = { devices: null, transfers: null, relays: null, audit: [], auditPage: 0, auditDone: false, health: null, healthErr: false, projects: null, smtp: null };
+  const D = { devices: null, transfers: null, tunnels: null, relays: null, audit: [], auditPage: 0, auditDone: false, health: null, healthErr: false, projects: null, smtp: null, pendingKey: null };
   const ACTIVE = new Set(["QUEUED", "PROBING", "WAITING_FOR_ROUTE", "TRANSFERRING", "PAUSED", "VERIFYING"]);
   const load = {
     async devices() { D.devices = (await api("GET", "/api/v1/devices?limit=200")).items || []; updateCounts(); return D.devices; },
     async transfers() { D.transfers = (await api("GET", "/api/v1/transfers?limit=200")).items || []; updateCounts(); return D.transfers; },
+    async tunnels() { D.tunnels = (await api("GET", "/api/v1/tunnels")).items || []; return D.tunnels; },
     async relays() { D.relays = (await api("GET", "/api/v1/relays")).items || []; return D.relays; },
     async projects() { D.projects = (await api("GET", "/api/v1/projects?limit=200")).items || []; return D.projects; },
     async health() {
@@ -1087,6 +1165,12 @@
   function devicePill(d) {
     const s = deviceState(d);
     return h("span", { class: "pill " + (s === "online" ? "ok live" : s === "pending" ? "info" : "") }, h("span", { class: "dot" }), t("status." + s));
+  }
+  function tunnelPill(x) {
+    if (x.status === "disabled") return h("span", { class: "pill" }, h("span", { class: "dot" }), t("app.tunnels.statusDisabled"));
+    if (x.status === "quota_exceeded") return h("span", { class: "pill warn" }, h("span", { class: "dot" }), t("app.tunnels.statusQuota"));
+    if (x.online) return h("span", { class: "pill ok live" }, h("span", { class: "dot" }), t("status.online"));
+    return h("span", { class: "pill info" }, h("span", { class: "dot" }), t("status.pending"));
   }
   function routeLabel(r) { const k = "route." + (r || "none"); const v = t(k); return v === k ? r : v; }
   function progress(x) {
@@ -1276,6 +1360,80 @@
       },
     },
 
+    tunnels: {
+      interval: () => 30000,
+      async refresh(quiet) {
+        const host = $("#tu-table");
+        if (!quiet && !D.tunnels) host.replaceChildren(loadingRows(3));
+        try { await Promise.all([load.tunnels(), D.devices ? null : load.devices()]); } catch (e) { if (!quiet) toast(errText(e), "err"); }
+        this.render();
+      },
+      render() {
+        const host = $("#tu-table"), all = D.tunnels || [];
+        host.replaceChildren();
+        if (D.pendingKey) {
+          const dismiss = h("button", { class: "btn btn-quiet btn-xs", type: "button" }, t("common.close"));
+          dismiss.addEventListener("click", () => { D.pendingKey = null; PAGES.tunnels.render(); });
+          host.append(h("div", { class: "panel" },
+            h("div", { class: "kv-block" },
+              h("span", { class: "label" }, t("app.tunnels.newKeyNote")),
+              h("div", { class: "secret-row" },
+                h("span", { class: "mono hot" }, D.pendingKey.key),
+                inlineCopy(D.pendingKey.key, "common.copy"),
+                dismiss))));
+        }
+        if (!all.length) {
+          const can = (D.devices || []).length >= 1;
+          host.append(emptyState({
+            icon: "globe", seed: 21, title: t("app.tunnels.emptyTitle"),
+            text: can ? t("app.tunnels.emptyText") : t("app.tunnels.emptyNeedDevice"),
+            action: can ? h("button", { class: "btn btn-primary", type: "button", "data-open": "tunnel" }, icon("plus"), t("app.tunnels.new")) : null,
+          }));
+          return;
+        }
+        host.append(table(
+          [{ label: t("app.tunnels.colTunnel") }, { label: t("app.tunnels.colUrl") }, { label: t("app.tunnels.colStatus") }, { label: t("app.tunnels.colTraffic") }, { label: t("common.actions"), cls: "nowrap" }],
+          all.map((x) => {
+            const ratio = x.monthly_quota_bytes ? Math.min(1, x.bytes_in_month / x.monthly_quota_bytes) : 0;
+            const bar = h("div", { class: "progress" + (ratio > 0.95 ? " err" : ratio > 0.8 ? " warn" : "") }, h("i"));
+            bar.firstChild.style.setProperty("--p", (ratio * 100).toFixed(1) + "%");
+            const url = location.origin + x.url_path;
+            const toggle = h("button", { class: "btn btn-outline btn-xs", type: "button" }, t(x.status === "disabled" ? "app.tunnels.actionEnable" : "app.tunnels.actionDisable"));
+            toggle.addEventListener("click", () => busy(toggle, async () => {
+              try {
+                await api("PATCH", "/api/v1/tunnels/" + x.id, { status: x.status === "disabled" ? "active" : "disabled" });
+                toast(t("app.tunnels.updated")); await load.tunnels(); this.render();
+              } catch (err) { toast(errText(err), "err"); }
+            }));
+            const rotate = h("button", { class: "btn btn-outline btn-xs", type: "button" }, t("app.tunnels.actionRotate"));
+            rotate.addEventListener("click", () => busy(rotate, async () => {
+              try {
+                const d = await api("POST", `/api/v1/tunnels/${x.id}/rotate-key`);
+                D.pendingKey = { key: d.access_key }; await load.tunnels(); this.render();
+              } catch (err) { toast(errText(err), "err"); }
+            }));
+            const del = h("button", { class: "btn btn-quiet btn-xs", type: "button" }, t("app.tunnels.actionDelete"));
+            del.addEventListener("click", () => {
+              if (!window.confirm(t("app.tunnels.deleteConfirm", { name: x.name || x.slug.slice(0, 8) }))) return;
+              busy(del, async () => {
+                try {
+                  await api("DELETE", "/api/v1/tunnels/" + x.id);
+                  toast(t("app.tunnels.deleted")); await load.tunnels(); this.render();
+                } catch (err) { toast(errText(err), "err"); }
+              });
+            });
+            return [
+              [h("div", { class: "primary" }, x.name || t("app.tunnels.unnamed")), h("div", { class: "sub" }, h("span", { class: "tag-mono" }, x.device_hostname || short(x.device_id)), " · ", h("span", { class: "mono" }, x.target))],
+              [h("a", { class: "mono link", href: url, target: "_blank", rel: "noopener" }, x.url_path), inlineCopy(url, "app.tunnels.copyUrl"),
+                x.url_subdomain ? h("div", { class: "sub" }, h("a", { class: "mono link", href: location.protocol + "//" + x.url_subdomain + (location.port ? ":" + location.port : ""), target: "_blank", rel: "noopener" }, location.protocol + "//" + x.url_subdomain)) : null],
+              [tunnelPill(x), x.key_required ? h("div", { class: "sub" }, icon("key"), " ", t("app.tunnels.keyOn")) : h("div", { class: "sub" }, t("app.tunnels.keyOff"))],
+              h("div", { class: "prog" }, bar, h("div", { class: "prog-meta" }, h("span", null, t("app.tunnels.usageOf", { used: fmt.bytes(x.bytes_in_month), quota: fmt.bytes(x.monthly_quota_bytes) })))),
+              h("div", { class: "row-actions" }, toggle, rotate, del),
+            ];
+          })));
+      },
+    },
+
     relays: {
       interval: () => 30000,
       async refresh(quiet) {
@@ -1343,10 +1501,19 @@
         this.render();
         if (!isAdmin()) return;
         if (!this.smtp) this.smtp = mountSmtp($('[data-mount="smtp-settings"]'), "settings");
-        const [smtp, st] = await Promise.all([load.smtp().catch(() => null), Status.get(true)]);
+        const [smtp, st, tun] = await Promise.all([
+          load.smtp().catch(() => null),
+          Status.get(true),
+          api("GET", "/api/v1/tunnels/settings").catch(() => null),
+        ]);
         if (smtp) this.smtp.fill(smtp);
         setSmtpPill(smtp && smtp.configured);
         if (st) $("#set-reg").setAttribute("aria-checked", String(!!st.allow_registration));
+        if (tun) {
+          $("#set-tunnels").setAttribute("aria-checked", String(!!tun.enabled));
+          $("#set-tun-budget").value = tun.global_monthly_bytes || "";
+          $("#set-tun-rate").value = tun.rate_per_min || "";
+        }
       },
       render() {
         const me = App.me || {};
@@ -1378,6 +1545,15 @@
     "device enrolled": ["event.deviceEnrolled", "key", "moss"],
     "transfer created": ["event.transferCreated", "transfer", "slate"],
     "project created": ["event.projectCreated", "folder", "slate"],
+    "tunnel created": ["event.tunnelCreated", "globe", "moss"],
+    "tunnel updated": ["event.tunnelUpdated", "settings", "slate"],
+    "tunnel deleted": ["event.tunnelDeleted", "globe", "clay"],
+    "tunnel key rotated": ["event.tunnelKeyRotated", "key", "slate"],
+    "tunnel agent online": ["event.tunnelAgentOnline", "globe", "moss"],
+    "tunnel agent offline": ["event.tunnelAgentOffline", "globe", "slate"],
+    "tunnel quota warning": ["event.tunnelQuotaWarn", "alert", "clay"],
+    "tunnel quota exceeded": ["event.tunnelQuotaExceeded", "alert", "clay"],
+    "tunnel global budget exceeded": ["event.tunnelBudget", "alert", "clay"],
   };
   function eventInfo(ev) {
     const e = EVENTS[ev];
@@ -1402,7 +1578,7 @@
     const logout = async () => {
       try { await api("POST", "/api/v1/auth/logout", {}, { quiet401: true }); } catch { /* already gone */ }
       Session.clear();
-      Object.assign(D, { devices: null, transfers: null, relays: null, audit: [], projects: null, smtp: null });
+      Object.assign(D, { devices: null, transfers: null, tunnels: null, pendingKey: null, relays: null, audit: [], projects: null, smtp: null });
       go("#/");
     };
     $("#btn-logout").addEventListener("click", logout);
@@ -1434,8 +1610,34 @@
       } catch (err) { toast(errText(err), "err"); }
       finally { sw.classList.remove("is-busy"); }
     });
+    $("#set-tunnels").addEventListener("click", async (e) => {
+      const sw = e.currentTarget, next = sw.getAttribute("aria-checked") !== "true";
+      sw.classList.add("is-busy");
+      try {
+        const st = await api("PUT", "/api/v1/tunnels/settings", { enabled: next });
+        sw.setAttribute("aria-checked", String(!!st.enabled));
+        toast(t(next ? "app.settings.tunOn" : "app.settings.tunOff"));
+      } catch (err) { toast(errText(err), "err"); }
+      finally { sw.classList.remove("is-busy"); }
+    });
+    $("#set-tun-save").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      const budget = parseInt($("#set-tun-budget").value, 10);
+      const rate = parseInt($("#set-tun-rate").value, 10);
+      const body = {};
+      if (Number.isInteger(budget) && budget >= 0) body.global_monthly_bytes = budget;
+      if (Number.isInteger(rate) && rate >= 10) body.rate_per_min = rate;
+      if (!Object.keys(body).length) { toast(t("err.fillAll"), "err"); return; }
+      try {
+        const st = await api("PUT", "/api/v1/tunnels/settings", body);
+        $("#set-tun-budget").value = st.global_monthly_bytes;
+        $("#set-tun-rate").value = st.rate_per_min;
+        toast(t("app.settings.tunSaved"));
+      } catch (err) { toast(errText(err), "err"); }
+    }));
     on("devices-changed", () => { D.devices = null; });
-    on("modal-closed", (id) => { if (id === "modal-enroll" && App.page) PAGES[App.page].refresh(true); });
+    on("modal-closed", (id) => {
+      if (App.page && (id === "modal-enroll" || id === "modal-tunnel")) PAGES[App.page].refresh(true);
+    });
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && currentView === "app") poll(0); });
     initTransferModal();
   }

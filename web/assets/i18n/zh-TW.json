@@ -33,7 +33,8 @@
     "all": "全部",
     "refresh": "重新整理",
     "loadMore": "載入更多",
-    "noMatch": "沒有符合篩選條件的結果。"
+    "noMatch": "沒有符合篩選條件的結果。",
+    "actions": "操作"
   },
   "nav": {
     "what": "它是什麼",
@@ -236,7 +237,7 @@
     "c1": "安裝 Tailscale 並加入你的網路",
     "c2": "保存 Agent 權杖（僅 root 可讀）",
     "c2win": "保存 Agent 權杖（僅管理員與 SYSTEM 可讀）",
-    "c3": "安裝 meshbridge-agent（先下載對應平台的建置）",
+    "c3": "下載並安裝 meshbridge-agent（自動識別架構，校驗雜湊）",
     "c4": "啟動 Agent",
     "success": "裝置已建立。金鑰只顯示這一次。"
   },
@@ -261,6 +262,35 @@
     "submit": "建立傳輸",
     "created": "傳輸已排入佇列",
     "needTwo": "至少需要兩台已連線的裝置才能建立傳輸。"
+  },
+  "tun": {
+    "title": "新增隧道",
+    "sub": "給內網網頁一個受金鑰保護的公開連結。",
+    "needDevice": "請先接入一台裝置。",
+    "device": "裝置",
+    "name": "名稱",
+    "namePh": "例如：團隊看板",
+    "scheme": "協定",
+    "port": "本機連接埠",
+    "portPh": "8080",
+    "host": "本機位址",
+    "hostHint": "裝置上的 IP 字面值——僅限環回或私網位址段。",
+    "keyRequired": "存取金鑰",
+    "keyOn": "需要（建議）",
+    "keyOff": "不需要",
+    "keyHint": "訪客輸入一次金鑰即可；程式呼叫可用 Bearer 權杖攜帶。",
+    "submit": "建立隧道",
+    "onceWarn": "立即保存金鑰——只顯示這一次，無法找回。",
+    "urlPath": "公開連結（路徑）",
+    "urlSubdomain": "公開連結（子網域）",
+    "accessKey": "存取金鑰",
+    "agentHint": "裝置上的 agent 會在下次心跳（約 30 秒）自動接上這條隧道，無需重啟。",
+    "success": "隧道已建立",
+    "badPort": "連接埠必須是 1–65535。",
+    "sandbox": "同源隔離",
+    "sandboxOn": "沙箱（建議）",
+    "sandboxOff": "完整頁面（僅限可信內容）",
+    "sandboxHint": "路徑模式連結與控制台同源；沙箱可阻止隧道頁面讀取控制台的資料。"
   },
   "status": {
     "online": "線上",
@@ -297,13 +327,23 @@
     "deviceRegistered": "註冊裝置",
     "deviceEnrolled": "簽發裝置接入",
     "transferCreated": "建立傳輸",
-    "projectCreated": "建立專案"
+    "projectCreated": "建立專案",
+    "tunnelCreated": "隧道已建立",
+    "tunnelUpdated": "隧道已更新",
+    "tunnelDeleted": "隧道已刪除",
+    "tunnelKeyRotated": "隧道金鑰已輪替",
+    "tunnelAgentOnline": "隧道 agent 已上線",
+    "tunnelAgentOffline": "隧道 agent 已離線",
+    "tunnelQuotaWarn": "隧道流量預警",
+    "tunnelQuotaExceeded": "隧道流量超限",
+    "tunnelBudget": "隧道總預算超限"
   },
   "app": {
     "nav": {
       "overview": "總覽",
       "devices": "裝置",
       "transfers": "傳輸",
+      "tunnels": "隧道",
       "relays": "中繼",
       "audit": "稽核日誌",
       "settings": "設定"
@@ -385,6 +425,33 @@
       "emptyNeedDevices": "先接入至少兩台裝置，再發起第一次傳輸。",
       "copyId": "複製傳輸 ID"
     },
+    "tunnels": {
+      "title": "隧道",
+      "sub": "把內網網頁透過帶金鑰門禁的公開連結分享出去。",
+      "new": "新增隧道",
+      "colTunnel": "隧道",
+      "colUrl": "公開連結",
+      "colStatus": "狀態",
+      "colTraffic": "流量",
+      "emptyTitle": "還沒有隧道",
+      "emptyText": "把已接入裝置上執行的網頁暴露到公網——裝置主動外連，訪客拿到的是受金鑰保護的公開連結。",
+      "emptyNeedDevice": "請先接入一台裝置，再為它的本機網頁建立隧道。",
+      "copyUrl": "複製公開連結",
+      "keyOn": "需要金鑰",
+      "keyOff": "開放連結",
+      "statusDisabled": "已停用",
+      "statusQuota": "流量已滿",
+      "actionDisable": "停用",
+      "actionEnable": "啟用",
+      "actionRotate": "換新金鑰",
+      "actionDelete": "刪除",
+      "deleteConfirm": "刪除隧道「{name}」？它的公開連結會立即失效。",
+      "deleted": "隧道已刪除",
+      "updated": "隧道已更新",
+      "unnamed": "未命名隧道",
+      "usageOf": "{used} / {quota}",
+      "newKeyNote": "新存取金鑰（僅顯示一次）"
+    },
     "relays": {
       "title": "中繼",
       "sub": "你自己的中繼節點，直連走不通時啟用。",
@@ -428,7 +495,19 @@
       "regTitle": "公開註冊",
       "regDesc": "任何驗證過信箱的人都可以註冊帳號。",
       "regOn": "公開註冊現已開啟",
-      "regOff": "公開註冊現已關閉"
+      "regOff": "公開註冊現已關閉",
+      "tunnelsTitle": "公開隧道",
+      "tunnelsDesc": "隧道網頁的伺服器級護欄。",
+      "tunEnabled": "啟用隧道",
+      "tunEnabledHint": "所有公開隧道的總開關。",
+      "tunBudget": "每月流量預算",
+      "tunBudgetHint": "全部隧道共享的每月位元組數。",
+      "tunRate": "訪客限速",
+      "tunRateHint": "每個訪客 IP 每分鐘請求數。",
+      "tunSave": "儲存限額",
+      "tunSaved": "限額已儲存",
+      "tunOn": "隧道已啟用",
+      "tunOff": "隧道已停用"
     }
   },
   "err": {

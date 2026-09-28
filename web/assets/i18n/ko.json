@@ -33,7 +33,8 @@
     "all": "전체",
     "refresh": "새로 고침",
     "loadMore": "더 불러오기",
-    "noMatch": "필터와 일치하는 항목이 없습니다."
+    "noMatch": "필터와 일치하는 항목이 없습니다.",
+    "actions": "작업"
   },
   "nav": {
     "what": "소개",
@@ -236,7 +237,7 @@
     "c1": "Tailscale을 설치하고 네트워크에 합류",
     "c2": "에이전트 토큰 저장(root만 읽기 가능)",
     "c2win": "에이전트 토큰 저장(관리자와 SYSTEM만)",
-    "c3": "meshbridge-agent 설치(먼저 해당 플랫폼 빌드를 내려받기)",
+    "c3": "meshbridge-agent을 다운로드해 설치합니다(아키텍처 자동 감지, 체크섬 검증)",
     "c4": "에이전트 시작",
     "success": "기기가 생성되었습니다. 키는 이번 한 번만 표시됩니다."
   },
@@ -261,6 +262,35 @@
     "submit": "전송 만들기",
     "created": "전송이 대기열에 추가되었습니다",
     "needTwo": "전송을 만들려면 연결된 기기가 최소 두 대 필요합니다."
+  },
+  "tun": {
+    "title": "새 터널",
+    "sub": "내부망 웹 페이지에 키로 보호되는 공개 링크를 부여합니다.",
+    "needDevice": "먼저 장치를 연결하세요.",
+    "device": "장치",
+    "name": "이름",
+    "namePh": "예: 팀 대시보드",
+    "scheme": "스킴",
+    "port": "로컬 포트",
+    "portPh": "8080",
+    "host": "로컬 호스트",
+    "hostHint": "장치의 IP 리터럴——루프백 또는 사설 대역만 가능합니다.",
+    "keyRequired": "액세스 키",
+    "keyOn": "필요(권장)",
+    "keyOff": "불필요",
+    "keyHint": "방문자는 키를 한 번만 입력하면 되고, API 호출에서는 Bearer 토큰으로 전달할 수 있습니다.",
+    "submit": "터널 만들기",
+    "onceWarn": "지금 키를 복사하세요——한 번만 표시되며 복구할 수 없습니다.",
+    "urlPath": "공개 링크(경로)",
+    "urlSubdomain": "공개 링크(서브도메인)",
+    "accessKey": "액세스 키",
+    "agentHint": "장치의 agent가 다음 하트비트(약 30초)에 자동으로 연결합니다. 재시작이 필요 없습니다.",
+    "success": "터널이 생성되었습니다",
+    "badPort": "포트는 1–65535여야 합니다.",
+    "sandbox": "오리진 격리",
+    "sandboxOn": "샌드박스(권장)",
+    "sandboxOff": "전체 페이지(신뢰하는 콘텐츠만)",
+    "sandboxHint": "경로 모드 링크는 콘솔과 같은 오리진입니다. 샌드박스가 터널 페이지의 콘솔 데이터 접근을 차단합니다."
   },
   "status": {
     "online": "온라인",
@@ -297,13 +327,23 @@
     "deviceRegistered": "기기 등록",
     "deviceEnrolled": "기기 등록 키 발급",
     "transferCreated": "전송 생성",
-    "projectCreated": "프로젝트 생성"
+    "projectCreated": "프로젝트 생성",
+    "tunnelCreated": "터널 생성됨",
+    "tunnelUpdated": "터널 업데이트됨",
+    "tunnelDeleted": "터널 삭제됨",
+    "tunnelKeyRotated": "터널 키 재발급",
+    "tunnelAgentOnline": "터널 agent 온라인",
+    "tunnelAgentOffline": "터널 agent 오프라인",
+    "tunnelQuotaWarn": "터널 트래픽 경고",
+    "tunnelQuotaExceeded": "터널 트래픽 초과",
+    "tunnelBudget": "터널 총 예산 초과"
   },
   "app": {
     "nav": {
       "overview": "개요",
       "devices": "기기",
       "transfers": "전송",
+      "tunnels": "터널",
       "relays": "릴레이",
       "audit": "감사 로그",
       "settings": "설정"
@@ -385,6 +425,33 @@
       "emptyNeedDevices": "먼저 기기를 두 대 이상 연결하고 첫 전송을 시작하세요.",
       "copyId": "전송 ID 복사"
     },
+    "tunnels": {
+      "title": "터널",
+      "sub": "내부망 웹 페이지를 키로 보호되는 공개 링크로 공유합니다.",
+      "new": "새 터널",
+      "colTunnel": "터널",
+      "colUrl": "공개 URL",
+      "colStatus": "상태",
+      "colTraffic": "트래픽",
+      "emptyTitle": "터널이 없습니다",
+      "emptyText": "연결된 장치에서 실행 중인 웹 페이지를 공개할 수 있습니다——장치는 아웃바운드로만 연결하고, 방문자에게는 키로 보호된 링크가 제공됩니다.",
+      "emptyNeedDevice": "먼저 장치를 연결한 뒤 해당 장치의 로컬 페이지 터널을 만드세요.",
+      "copyUrl": "공개 URL 복사",
+      "keyOn": "키 필요",
+      "keyOff": "개방형 링크",
+      "statusDisabled": "비활성화됨",
+      "statusQuota": "한도 도달",
+      "actionDisable": "비활성화",
+      "actionEnable": "활성화",
+      "actionRotate": "새 키 발급",
+      "actionDelete": "삭제",
+      "deleteConfirm": "터널 “{name}”을(를) 삭제할까요? 공개 링크는 즉시 작동을 멈춥니다.",
+      "deleted": "터널 삭제됨",
+      "updated": "터널 업데이트됨",
+      "unnamed": "이름 없는 터널",
+      "usageOf": "{used} / {quota}",
+      "newKeyNote": "새 액세스 키(한 번만 표시)"
+    },
     "relays": {
       "title": "릴레이",
       "sub": "직접 경로가 불가능할 때를 위한 자체 릴레이 노드.",
@@ -428,7 +495,19 @@
       "regTitle": "공개 가입",
       "regDesc": "이메일 인증을 마친 누구나 계정을 만들 수 있습니다.",
       "regOn": "공개 가입이 열렸습니다",
-      "regOff": "공개 가입이 닫혔습니다"
+      "regOff": "공개 가입이 닫혔습니다",
+      "tunnelsTitle": "공개 터널",
+      "tunnelsDesc": "터널 웹 페이지의 서버 전체 가드레일.",
+      "tunEnabled": "터널 활성화",
+      "tunEnabledHint": "모든 공개 터널의 마스터 스위치.",
+      "tunBudget": "월 트래픽 예산",
+      "tunBudgetHint": "모든 터널이 공유하는 월 바이트 수.",
+      "tunRate": "방문자 속도 제한",
+      "tunRateHint": "방문자 IP당 분당 요청 수.",
+      "tunSave": "한도 저장",
+      "tunSaved": "한도가 저장되었습니다",
+      "tunOn": "터널이 활성화되었습니다",
+      "tunOff": "터널이 비활성화되었습니다"
     }
   },
   "err": {

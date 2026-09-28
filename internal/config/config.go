@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 )
@@ -10,6 +11,7 @@ import (
 type Config struct {
 	Env               string // production/staging/dev
 	ListenAddr        string // e.g. 127.0.0.1:8081 (never public by default)
+	GatewayListenAddr string // 127.0.0.1:8082 (tunnel visitor gateway, loopback)
 	DataDir           string // /var/lib/meshbridge
 	PolicyPath        string // /etc/headscale/policy.hujson
 	PolicySnapshotDir string
@@ -20,12 +22,14 @@ type Config struct {
 	DefaultChunkBytes int64  // default 64MiB
 	ProbeIntervalSec  int
 	ControlWarnBytes  []int64
+	TunnelBaseDomain  string // enables t-<slug>.<domain> mode (default: host of MESH_BASE_URL)
 }
 
 func Default() Config {
 	return Config{
 		Env:               "production",
 		ListenAddr:        "127.0.0.1:8081",
+		GatewayListenAddr: "127.0.0.1:8082",
 		DataDir:           "/var/lib/meshbridge",
 		PolicyPath:        "/etc/headscale/policy.hujson",
 		PolicySnapshotDir: "/var/lib/meshbridge/policy-snapshots",
@@ -56,6 +60,12 @@ func FromEnv() Config {
 	if v := os.Getenv("MESH_MASTER_KEY_PATH"); v != "" {
 		c.MasterKeyPath = v
 	}
+	if v := os.Getenv("MESH_GATEWAY_LISTEN"); v != "" {
+		c.GatewayListenAddr = v
+	}
+	if v := os.Getenv("MESH_TUNNEL_BASE_DOMAIN"); v != "" {
+		c.TunnelBaseDomain = v
+	}
 	if v := os.Getenv("MESH_BASE_URL"); v != "" {
 		_ = v // read again in main; kept here for config completeness
 	}
@@ -75,6 +85,15 @@ func (c Config) Validate() error {
 	// Refuse to bind transfer/API to 0.0.0.0 in production unless explicitly overridden.
 	if c.Env == "production" && (c.ListenAddr == "0.0.0.0:8081" || c.ListenAddr == ":8081") {
 		return fmt.Errorf("refusing to listen on all interfaces in production (CONTROL != DATA); bind 127.0.0.1 behind Caddy")
+	}
+	if c.GatewayListenAddr != "" {
+		host, _, err := net.SplitHostPort(c.GatewayListenAddr)
+		if err != nil || host == "" {
+			return fmt.Errorf("gateway listen addr must be host:port")
+		}
+		if c.Env == "production" && host != "127.0.0.1" && host != "localhost" && host != "::1" {
+			return fmt.Errorf("tunnel gateway must bind loopback behind Caddy (got %s)", c.GatewayListenAddr)
+		}
 	}
 	if c.DerpLimitBytes <= 0 || c.DerpLimitBytes > 1<<30 {
 		return fmt.Errorf("derp limit out of range")
