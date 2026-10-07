@@ -6,8 +6,8 @@ import (
 )
 
 type Summary struct {
-	AgentsOnline int `json:"agents_online"`
-	JobsActive   int `json:"jobs_active"`
+	AgentsOnline int   `json:"agents_online"`
+	JobsActive   int   `json:"jobs_active"`
 	BytesMonth   int64 `json:"-"`
 }
 

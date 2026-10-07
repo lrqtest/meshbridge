@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net"
@@ -71,6 +72,7 @@ func (s *Server) routes() {
 	s.Mux.HandleFunc("/api/v1/auth/register", s.handleRegister)
 	s.Mux.HandleFunc("/api/v1/auth/password-reset", s.handlePasswordReset)
 	s.Mux.HandleFunc("/api/v1/devices/enroll", s.handleDeviceEnroll)
+	s.Mux.HandleFunc("/api/v1/devices/{id}", s.requireAuth(s.handleDeviceDelete))
 	s.Mux.HandleFunc("/api/v1/projects", s.requireAuth(s.handleProjects))
 	s.Mux.HandleFunc("/api/v1/devices", s.requireAuth(s.handleDevices))
 	s.Mux.HandleFunc("/api/v1/agents/heartbeat", s.handleAgentHeartbeat)
@@ -177,7 +179,22 @@ func pagParams(r *http.Request) (limit, offset int) {
 }
 
 // requireAuth accepts a Bearer API token (hashed at rest). Tokens with a
-// nonzero expires_at in the past are rejected; 0 means non-expiring.
+// nonzero expires_at in the past are rejected; 0 means non-expiring. The
+// owning account must still be enabled — a disable must take effect on
+// already-issued tokens — and the user rides the request context.
+type ctxKey int
+
+const userCtxKey ctxKey = 0
+
+type authUser struct {
+	ID, Role string
+}
+
+func requestUser(r *http.Request) authUser {
+	u, _ := r.Context().Value(userCtxKey).(authUser)
+	return u
+}
+
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("Authorization")
@@ -187,10 +204,12 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		raw := strings.TrimPrefix(h, "Bearer ")
 		hash := auth.HashToken(raw)
-		var uid string
-		var exp int64
-		err := s.DB.QueryRow(`SELECT user_id, expires_at FROM api_tokens WHERE token_hash=?`, hash).Scan(&uid, &exp)
-		if err != nil {
+		var u authUser
+		var disabled, exp int64
+		err := s.DB.QueryRow(`SELECT t.user_id,u.role,u.disabled,t.expires_at
+			FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`, hash).
+			Scan(&u.ID, &u.Role, &disabled, &exp)
+		if err != nil || disabled == 1 {
 			writeErr(w, 401, "unauthorized", "bad token")
 			return
 		}
@@ -199,11 +218,13 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, 401, "unauthorized", "token expired")
 			return
 		}
-		next(w, r)
+		next(w, r.WithContext(context.WithValue(r.Context(), userCtxKey, u)))
 	}
 }
 
-// requireDeviceToken authenticates agents via one-time-issued device tokens.
+// requireDeviceToken authenticates agents via issued device tokens. Revoked
+// or expired tokens are dead, and so is every token of a device whose owner
+// has been disabled.
 func (s *Server) requireDeviceToken(next func(w http.ResponseWriter, r *http.Request, deviceID string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("Authorization")
@@ -213,7 +234,10 @@ func (s *Server) requireDeviceToken(next func(w http.ResponseWriter, r *http.Req
 		}
 		hash := auth.HashToken(strings.TrimPrefix(h, "Bearer "))
 		var deviceID string
-		err := s.DB.QueryRow(`SELECT device_id FROM device_tokens WHERE token_hash=? AND revoked=0`, hash).Scan(&deviceID)
+		err := s.DB.QueryRow(`SELECT dt.device_id FROM device_tokens dt
+			JOIN devices d ON d.id=dt.device_id JOIN users u ON u.id=d.owner_user_id
+			WHERE dt.token_hash=? AND dt.revoked=0 AND (dt.expires_at=0 OR dt.expires_at>?) AND u.disabled=0`,
+			hash, time.Now().Unix()).Scan(&deviceID)
 		if err != nil {
 			writeErr(w, 401, "unauthorized", "bad device token")
 			return
@@ -241,6 +265,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 const loginTokenTTL = 24 * time.Hour
+
+// deviceTokenTTL bounds an agent's credentials; re-enroll to renew. A leaked
+// device token must not be valid forever, and DELETE /api/v1/devices/{id}
+// revokes a device's tokens immediately.
+const deviceTokenTTL = 90 * 24 * time.Hour
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -400,10 +429,16 @@ func probeClass(raw json.RawMessage) string {
 }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	me := requestUser(r)
 	switch r.Method {
 	case "GET":
 		limit, offset := pagParams(r)
-		rows, err := s.DB.Query(`SELECT id,name,slug,created_at FROM projects ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+		where, args := "", []any{}
+		if me.Role != "admin" {
+			where = ` WHERE p.id IN (SELECT project_id FROM project_memberships WHERE user_id=?)`
+			args = append(args, me.ID)
+		}
+		rows, err := s.DB.Query(`SELECT p.id,p.name,p.slug,p.created_at FROM projects p`+where+` ORDER BY p.created_at DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 		if err != nil {
 			writeErr(w, 500, "db", "query failed")
 			return
@@ -431,6 +466,8 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 409, "conflict", "project exists?")
 			return
 		}
+		// the creator owns the project: membership drives every visibility check
+		_, _ = s.DB.Exec(`INSERT OR IGNORE INTO project_memberships(project_id,user_id,role) VALUES(?,?,'owner')`, id, me.ID)
 		_ = audit.Log(r.Context(), s.DB, "api", "project created", id, "", "", in.Name)
 		writeJSON(w, map[string]any{"id": id, "slug": slug})
 	default:
@@ -439,10 +476,17 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
+	me := requestUser(r)
 	switch r.Method {
 	case "GET":
 		limit, offset := pagParams(r)
-		rows, err := s.DB.Query(`SELECT d.id,d.hostname,d.tailscale_ip,a.online,a.last_seen FROM devices d LEFT JOIN agents a ON a.device_id=d.id ORDER BY d.created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+		// tenants see their own fleet; only admins see every device
+		where, args := "", []any{}
+		if me.Role != "admin" {
+			where = ` WHERE d.owner_user_id=?`
+			args = append(args, me.ID)
+		}
+		rows, err := s.DB.Query(`SELECT d.id,d.hostname,d.tailscale_ip,a.online,a.last_seen FROM devices d LEFT JOIN agents a ON a.device_id=d.id`+where+` ORDER BY d.created_at DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 		if err != nil {
 			writeErr(w, 500, "db", "query failed")
 			return
@@ -471,26 +515,53 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "bad_request", "bad hostname")
 			return
 		}
-		var owner string
-		if err := s.DB.QueryRow(`SELECT user_id FROM api_tokens WHERE token_hash=?`, auth.HashToken(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))).Scan(&owner); err != nil {
-			writeErr(w, 401, "unauthorized", "bad token")
-			return
-		}
 		id := auth.HashToken(in.Hostname + strconv.FormatInt(time.Now().UnixNano(), 10))[:16]
-		if _, err := s.DB.Exec(`INSERT INTO devices(id,hostname,owner_user_id,created_at) VALUES(?,?,?,?)`, id, in.Hostname, owner, time.Now().Unix()); err != nil {
+		if _, err := s.DB.Exec(`INSERT INTO devices(id,hostname,owner_user_id,created_at) VALUES(?,?,?,?)`, id, in.Hostname, me.ID, time.Now().Unix()); err != nil {
 			writeErr(w, 500, "db", "insert failed")
 			return
 		}
 		raw, _ := auth.RandomToken(32)
-		if _, err := s.DB.Exec(`INSERT INTO device_tokens(token_hash,device_id,created_at) VALUES(?,?,?)`, auth.HashToken(raw), id, time.Now().Unix()); err != nil {
+		// device tokens age out (re-enroll to renew); revoke via DELETE /devices/{id}
+		if _, err := s.DB.Exec(`INSERT INTO device_tokens(token_hash,device_id,created_at,expires_at) VALUES(?,?,?,?)`,
+			auth.HashToken(raw), id, time.Now().Unix(), time.Now().Add(deviceTokenTTL).Unix()); err != nil {
 			writeErr(w, 500, "db", "token insert failed")
 			return
 		}
 		_ = audit.Log(r.Context(), s.DB, "api", "device registered", "", id, "", in.Hostname)
-		writeJSON(w, map[string]any{"id": id, "hostname": in.Hostname, "agent_token": raw})
+		writeJSON(w, map[string]any{"id": id, "hostname": in.Hostname, "agent_token": raw, "token_expires_at": time.Now().Add(deviceTokenTTL).Unix()})
 	default:
 		writeErr(w, 405, "method", "unsupported")
 	}
+}
+
+// handleDeviceDelete revokes a device: every token dies and the device row is
+// removed (agents cascade). Owner or admin.
+func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		writeErr(w, 405, "method", "DELETE only")
+		return
+	}
+	me := requestUser(r)
+	id := r.PathValue("id")
+	var owner string
+	if err := s.DB.QueryRow(`SELECT owner_user_id FROM devices WHERE id=?`, id).Scan(&owner); err != nil {
+		writeErr(w, 404, "not_found", "no such device")
+		return
+	}
+	if me.Role != "admin" && owner != me.ID {
+		writeErr(w, 403, "forbidden", "not your device")
+		return
+	}
+	if _, err := s.DB.Exec(`UPDATE device_tokens SET revoked=1 WHERE device_id=?`, id); err != nil {
+		writeErr(w, 500, "db", "revoke failed")
+		return
+	}
+	if _, err := s.DB.Exec(`DELETE FROM devices WHERE id=?`, id); err != nil {
+		writeErr(w, 500, "db", "delete failed")
+		return
+	}
+	_ = audit.Log(r.Context(), s.DB, "api", "device revoked", "", id, "", "")
+	writeJSON(w, map[string]any{"ok": true})
 }
 
 // transferPathOK rejects absolute paths and traversal segments early; the
@@ -511,10 +582,21 @@ func transferPathOK(p string) bool {
 }
 
 func (s *Server) handleTransfers(w http.ResponseWriter, r *http.Request) {
+	me := requestUser(r)
 	switch r.Method {
 	case "GET":
 		limit, offset := pagParams(r)
-		rows, err := s.DB.Query(`SELECT id,project_id,src_device_id,dst_device_id,state,route_type,bytes_total,bytes_done,error FROM transfer_jobs ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+		// transfer metadata (paths, sizes, devices) stays inside the project:
+		// members see their projects' jobs, device owners the jobs touching
+		// their machines; admins see everything
+		where, args := "", []any{}
+		if me.Role != "admin" {
+			where = ` WHERE (j.project_id IN (SELECT project_id FROM project_memberships WHERE user_id=?)
+				OR j.src_device_id IN (SELECT id FROM devices WHERE owner_user_id=?)
+				OR j.dst_device_id IN (SELECT id FROM devices WHERE owner_user_id=?))`
+			args = append(args, me.ID, me.ID, me.ID)
+		}
+		rows, err := s.DB.Query(`SELECT j.id,j.project_id,j.src_device_id,j.dst_device_id,j.state,j.route_type,j.bytes_total,j.bytes_done,j.error FROM transfer_jobs j`+where+` ORDER BY j.created_at DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 		if err != nil {
 			writeErr(w, 500, "db", "query failed")
 			return
@@ -587,6 +669,12 @@ func (s *Server) handleRelays(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		writeErr(w, 405, "method", "GET only")
+		return
+	}
+	// the audit trail spans every user (entries carry actor e-mail addresses
+	// and hostnames): it is admin-only, not part of any tenant's API
+	if u := requestUser(r); u.Role != "admin" {
+		writeErr(w, 403, "forbidden", "admin only")
 		return
 	}
 	limit, offset := pagParams(r)

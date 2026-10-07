@@ -30,13 +30,13 @@ type Observation struct {
 // tailscaleStatusJSON is the subset we rely on (stable across 1.80+).
 type tailscaleStatusJSON struct {
 	Peer map[string]struct {
-		Relay        string   `json:"Relay"`
-		RxBytes      int64    `json:"RxBytes"`
-		TxBytes      int64    `json:"TxBytes"`
-		Addrs        []string `json:"Addrs"`
-		CurAddr      string   `json:"CurAddr"`
-		PeerRelay    string   `json:"PeerRelay"`
-		LastHandshake string  `json:"LastHandshake"`
+		Relay         string   `json:"Relay"`
+		RxBytes       int64    `json:"RxBytes"`
+		TxBytes       int64    `json:"TxBytes"`
+		Addrs         []string `json:"Addrs"`
+		CurAddr       string   `json:"CurAddr"`
+		PeerRelay     string   `json:"PeerRelay"`
+		LastHandshake string   `json:"LastHandshake"`
 	} `json:"Peer"`
 	Self struct {
 		Relay string `json:"Relay"`

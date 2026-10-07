@@ -4,6 +4,7 @@ After=network-online.target headscale.service
 Wants=network-online.target
 
 [Service]
+UMask=0077
 Type=simple
 User=meshbridge
 Group=meshbridge

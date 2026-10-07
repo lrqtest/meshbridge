@@ -7,19 +7,19 @@ import "github.com/meshbridge/meshbridge/internal/probe"
 type Route string
 
 const (
-	RouteDirect   Route = "DIRECT"
-	RoutePeer     Route = "PEER_RELAY"
-	RouteS3       Route = "OBJECT_STORAGE"
-	RouteWait     Route = "WAITING_FOR_ROUTE"
-	RouteDERPSml  Route = "DERP_SMALL"
-	RouteRefused  Route = "REFUSED_DERP_LARGE"
+	RouteDirect  Route = "DIRECT"
+	RoutePeer    Route = "PEER_RELAY"
+	RouteS3      Route = "OBJECT_STORAGE"
+	RouteWait    Route = "WAITING_FOR_ROUTE"
+	RouteDERPSml Route = "DERP_SMALL"
+	RouteRefused Route = "REFUSED_DERP_LARGE"
 )
 
 type Relay struct {
-	ID             string
-	Healthy        bool
-	BytesMonth     int64
-	QuotaBytes     int64 // 0 = unlimited
+	ID         string
+	Healthy    bool
+	BytesMonth int64
+	QuotaBytes int64 // 0 = unlimited
 }
 
 func (r Relay) Usable() bool {

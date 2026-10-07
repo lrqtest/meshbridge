@@ -158,13 +158,15 @@ func (s *Server) tunnelView(t *tunnel.Tunnel, host string) tunnelView {
 	return v
 }
 
-// tokenUser resolves the bearer token to (userID, role).
+// tokenUser resolves the bearer token to (userID, role). A disabled account
+// loses its tokens immediately, and expired tokens are dead.
 func (s *Server) tokenUser(r *http.Request) (string, string) {
 	raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	var uid, role string
-	err := s.DB.QueryRow(`SELECT u.id,u.role FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`,
-		auth.HashToken(raw)).Scan(&uid, &role)
-	if err != nil {
+	var disabled, exp int64
+	err := s.DB.QueryRow(`SELECT u.id,u.role,u.disabled,t.expires_at FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`,
+		auth.HashToken(raw)).Scan(&uid, &role, &disabled, &exp)
+	if err != nil || disabled == 1 || (exp != 0 && time.Now().Unix() > exp) {
 		return "", ""
 	}
 	return uid, role
@@ -523,7 +525,11 @@ func (s *Server) handleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	hash := auth.HashToken(strings.TrimPrefix(h, "Bearer "))
 	var deviceID string
-	if err := s.DB.QueryRow(`SELECT device_id FROM device_tokens WHERE token_hash=? AND revoked=0`, hash).Scan(&deviceID); err != nil {
+	err := s.DB.QueryRow(`SELECT dt.device_id FROM device_tokens dt
+		JOIN devices d ON d.id=dt.device_id JOIN users u ON u.id=d.owner_user_id
+		WHERE dt.token_hash=? AND dt.revoked=0 AND (dt.expires_at=0 OR dt.expires_at>?) AND u.disabled=0`,
+		hash, time.Now().Unix()).Scan(&deviceID)
+	if err != nil {
 		writeErr(w, 401, "unauthorized", "bad device token")
 		return
 	}

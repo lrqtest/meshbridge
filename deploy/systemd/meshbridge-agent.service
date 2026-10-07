@@ -4,6 +4,7 @@ After=network-online.target tailscaled.service
 Wants=network-online.target
 
 [Service]
+UMask=0077
 Type=simple
 ExecStart=/usr/local/bin/meshbridge-agent --controller https://mesh.example.com --device-id %i --token-file /etc/meshbridge/agent.token --allowed-roots /home/user/projects,/data
 Restart=on-failure

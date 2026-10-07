@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	base  = flag.String("server", "https://mesh.example.com", "server base URL")
-	token = flag.String("token", os.Getenv("MESH_TOKEN"), "api token")
+	base    = flag.String("server", "https://mesh.example.com", "server base URL")
+	token   = flag.String("token", os.Getenv("MESH_TOKEN"), "api token")
 	jsonOut = flag.Bool("json", false, "json output")
 )
 

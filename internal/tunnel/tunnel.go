@@ -29,22 +29,22 @@ import (
 
 // Tunnel is the persisted configuration of one public tunnel.
 type Tunnel struct {
-	ID               string
-	DeviceID         string
-	Name             string
-	Slug             string
-	TargetScheme     string
-	TargetHost       string
-	TargetPort       int
-	KeyRequired      bool
-	AccessKeyHash    string
-	Status           string // active | disabled | quota_exceeded
-	StripPrefix      bool
+	ID            string
+	DeviceID      string
+	Name          string
+	Slug          string
+	TargetScheme  string
+	TargetHost    string
+	TargetPort    int
+	KeyRequired   bool
+	AccessKeyHash string
+	Status        string // active | disabled | quota_exceeded
+	StripPrefix   bool
 	// Sandbox: path mode serves the tunnel on the console origin, so by
 	// default responses carry `CSP: sandbox` (opaque origin — the page
 	// cannot read the console's localStorage/API token). Turn off only for
 	// content you fully control and that needs browser storage.
-	Sandbox bool
+	Sandbox          bool
 	MonthlyQuotaByte int64
 	MaxRequestBytes  int64
 	CreatedBy        string

@@ -23,11 +23,11 @@ func TestClassifyStatusJSON(t *testing.T) {
 func TestParsePingOutput(t *testing.T) {
 	cases := map[string]ConnectionClass{
 		"pong from us-pc (100.64.0.3) via 100.64.0.3:41641 in 42ms": ClassDirect,
-		"pong from us-pc via peer-relay(relay-jp-01) in 60ms":        ClassPeerRelay,
-		"pong from us-pc via DERP(ord) in 180ms":                     ClassDERP,
-		"no response": ClassUnreach,
-		"ping timed out": ClassUnreach,
-		"garbage ???": ClassUnknown,
+		"pong from us-pc via peer-relay(relay-jp-01) in 60ms":       ClassPeerRelay,
+		"pong from us-pc via DERP(ord) in 180ms":                    ClassDERP,
+		"no response":                                               ClassUnreach,
+		"ping timed out":                                            ClassUnreach,
+		"garbage ???":                                               ClassUnknown,
 	}
 	for in, want := range cases {
 		if got := ParsePingOutput(in); got.Class != want {

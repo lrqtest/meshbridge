@@ -162,6 +162,10 @@ func main() {
 		}
 	}
 	// Web UI from the embedded filesystem, SPA fallback to index.html.
+	// /dl/ is NOT part of the SPA: the install script curls origin/dl/* with
+	// `curl -f`, and the SPA fallback's 200 + index.html made it install HTML
+	// as the agent binary. Fail loudly until an agent download path exists.
+	srv.Mux.Handle("/dl/", http.NotFoundHandler())
 	srv.Mux.Handle("/", webHandler())
 	httpSrv := &http.Server{
 		Addr:              cfg.ListenAddr,

@@ -53,7 +53,7 @@ sudo install -m0755 /tmp/meshbridge-server /usr/local/bin/
 sudo cp deploy/systemd/meshbridge-server.service /etc/systemd/system/
 echo 'MESH_HEADSCALE_API_KEY=<key>' | sudo tee /etc/meshbridge/server.env
 sudo chmod 600 /etc/meshbridge/server.env
-head -c 32 /dev/urandom | sudo tee /etc/meshbridge/master.key >/dev/null
+openssl rand -hex 32 | sudo tee /etc/meshbridge/master.key >/dev/null
 sudo chmod 600 /etc/meshbridge/master.key
 sudo systemctl daemon-reload && sudo systemctl enable --now meshbridge-server
 curl -sf http://127.0.0.1:8081/api/v1/health

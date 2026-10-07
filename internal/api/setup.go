@@ -298,6 +298,10 @@ func (s *Server) handleSetupSMTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case "GET":
+		// the SMTP identity (often the admin's own mailbox) is not public data
+		if !s.requireAdminToken(w, r) {
+			return
+		}
 		host, _ := settings.Get(s.DB, "smtp_host")
 		port, _ := settings.Get(s.DB, "smtp_port")
 		user, _ := settings.Get(s.DB, "smtp_username")
@@ -499,8 +503,8 @@ func (s *Server) handleDeviceEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, _ := auth.RandomToken(32)
-	if _, err := s.DB.Exec(`INSERT INTO device_tokens(token_hash,device_id,created_at) VALUES(?,?,?)`,
-		auth.HashToken(raw), id, time.Now().Unix()); err != nil {
+	if _, err := s.DB.Exec(`INSERT INTO device_tokens(token_hash,device_id,created_at,expires_at) VALUES(?,?,?,?)`,
+		auth.HashToken(raw), id, time.Now().Unix(), time.Now().Add(deviceTokenTTL).Unix()); err != nil {
 		writeErr(w, 500, "db", "token insert failed")
 		return
 	}

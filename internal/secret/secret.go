@@ -12,29 +12,36 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 )
 
 // LoadKey reads the 32-byte hex master key from path, creating one on first
-// use (0600). The file must never be committed or logged.
+// use (0600). The file must never be committed or logged. Any read error
+// other than "not exists" fails hard: silently rotating the master key would
+// permanently lose every value sealed under the old one.
 func LoadKey(path string) ([]byte, error) {
-	if raw, err := os.ReadFile(path); err == nil {
-		k, err := hex.DecodeString(strings.TrimSpace(string(raw)))
-		if err != nil {
-			return nil, fmt.Errorf("master key is not valid hex: %w", err)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("read master key: %w", err)
 		}
-		if len(k) != 32 {
-			return nil, fmt.Errorf("master key must be 32 bytes, got %d", len(k))
+		k := make([]byte, 32)
+		if _, err := rand.Read(k); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(path, []byte(hex.EncodeToString(k)+"\n"), 0o600); err != nil {
+			return nil, err
 		}
 		return k, nil
 	}
-	k := make([]byte, 32)
-	if _, err := rand.Read(k); err != nil {
-		return nil, err
+	k, err := hex.DecodeString(strings.TrimSpace(string(raw)))
+	if err != nil {
+		return nil, fmt.Errorf("master key is not valid hex: %w", err)
 	}
-	if err := os.WriteFile(path, []byte(hex.EncodeToString(k)+"\n"), 0o600); err != nil {
-		return nil, err
+	if len(k) != 32 {
+		return nil, fmt.Errorf("master key must be 32 bytes, got %d", len(k))
 	}
 	return k, nil
 }
