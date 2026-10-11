@@ -36,95 +36,11 @@
     "noMatch": "Nada coincide con tus filtros.",
     "actions": "Acciones"
   },
-  "nav": {
-    "what": "Qué es",
-    "principle": "Principio",
-    "how": "Cómo funciona"
-  },
-  "hero": {
-    "eyebrow": "Malla autoalojada · Control ≠ Data",
-    "title": "Tus dispositivos, una red privada.",
-    "titleEm": "Los archivos van directos.",
-    "lede": "MeshBridge une las máquinas dispersas por tu casa, oficina y nube en una **malla privada cifrada con WireGuard**, y mueve archivos grandes punto a punto entre ellas. La velocidad la marca la propia línea, no el límite de otro.",
-    "ctaPrimary": "Empezar gratis",
-    "ctaSecondary": "Entrar a la consola",
-    "fine": "Verificación por correo · Plano de control autoalojado · Los archivos nunca tocan a un tercero"
-  },
-  "map": {
-    "aria": "Ilustración: tres dispositivos unidos por rutas directas cifradas, mientras el plano de control solo lleva señalización.",
-    "nas": "NAS de casa",
-    "laptop": "Portátil",
-    "studio": "Estación de trabajo en el extranjero",
-    "control": "Plano de control",
-    "controlNote": "solo señalización",
-    "legendDirect": "Tráfico de archivos, de dispositivo a dispositivo",
-    "legendSignal": "Solo coordinación · kilobytes"
-  },
-  "facts": {
-    "p2pLabel": "Rutas directas cifradas con WireGuard entre dispositivos",
-    "chunkLabel": "Transferencias por bloques que se reanudan donde se detuvieron",
-    "hashLabel": "Verificado por bloque, y otra vez el archivo completo",
-    "zeroLabel": "Tráfico de archivos que lleva el plano de control"
-  },
-  "what": {
-    "kicker": "Qué es",
-    "title": "Un servidor pequeño gestiona tu red y tus transferencias.",
-    "body": "Tu NAS tiene que enviar 200 GB de material a una estación de trabajo en el extranjero; el servidor de la oficina debe sincronizar un conjunto de datos con la nube. Los discos en la nube son lentos, limitados y opacos. MeshBridge ejecuta un plano de control ligero en tu propio VPS, une tus dispositivos en una red privada y mantiene cada transferencia entre los propios dispositivos.",
-    "c1Title": "Una malla privada de dispositivos",
-    "c1Body": "Un plano de control autoalojado construido sobre Headscale y Tailscale. Instalas el agente y el dispositivo se une solo; su dirección 100.x solo es visible dentro de tu red. Admisión, claves y topología quedan en tus manos.",
-    "c1Tag": "WireGuard · sin terceros",
-    "c2Title": "Archivos grandes, entregados intactos",
-    "c2Body": "Los archivos viajan en bloques de 64 MiB, cada uno verificado con BLAKE3 y anotado en un mapa de reanudación. Si la conexión se corta a medias, la transferencia continúa donde se quedó. Solo cuenta como terminada cuando el hash del archivo completo coincide.",
-    "c2Tag": "de GB a TB · reanudable · verificable",
-    "c3Title": "Rutas que se eligen solas",
-    "c3Body": "Los caminos entre dispositivos se sondan continuamente. Directo siempre que se pueda; cuando la red se interpone, el tráfico cae a tus propios relés o al almacenamiento de objetos. Un degradado exige varias muestras consecutivas, así que un parpadeo breve nunca lo dispara.",
-    "c3Tag": "Directo → Relé → S3 · automático"
-  },
-  "principle": {
-    "kicker": "El principio esencial",
-    "title": "Por qué tus archivos nunca dan un rodeo",
-    "body": "La primera regla de MeshBridge: el plano de control solo coordina (señalización, claves y planificación), así que su tráfico se queda en kilobytes. Los archivos siempre viajan por caminos entre tus dispositivos, y un archivo grande que intente colarse por el respaldo DERP lo rechaza el planificador.",
-    "dest": "Dispositivo de destino",
-    "r1Name": "Directo P2P",
-    "r1Note": "Preferido · velocidad plena de la línea",
-    "r1Flow": "La mayor parte del tráfico, de dispositivo a dispositivo",
-    "r1DestNote": "Túnel WireGuard",
-    "r2Name": "Relé propio",
-    "r2Note": "Cuando falla el directo · dentro de cuota",
-    "r2DestNote": "Nodo Peer Relay",
-    "r3Name": "Almacenamiento de objetos",
-    "r3Note": "Respaldo asíncrono · subida por bloques",
-    "r3DestNote": "Se descarga y se verifica",
-    "r4Name": "Respaldo DERP",
-    "r4Note": "Solo archivos pequeños (≤ 100 MiB)",
-    "r4Dest": "Archivos grandes rechazados",
-    "r4DestNote": "Bloqueados por el planificador"
-  },
-  "how": {
-    "kicker": "Cómo funciona",
-    "title": "Del registro a la primera transferencia en diez minutos",
-    "body": "Nada de configurar agentes a mano ni de abrir puertos de entrada. Todo ocurre en el navegador, más un comando por dispositivo.",
-    "s1Title": "Crea una cuenta",
-    "s1Body": "Regístrate con un código de correo, todo en el navegador. En el primer despliegue, un asistente breve configura el administrador y el servicio de correo.",
-    "s2Title": "Conecta tus dispositivos",
-    "s2Body": "La consola genera un comando de instalación. Pégalo en un NAS, servidor o portátil: Tailscale se une a la red y el agente de MeshBridge empieza a reportar.",
-    "s3Title": "Inicia una transferencia",
-    "s3Body": "Elige origen, destino y ruta. El planificador escoge la mejor ruta, reanuda tras cortes y cada paso queda en el registro de auditoría."
-  },
-  "closing": {
-    "title": "Convierte los dispositivos que ya tienes en una red propia.",
-    "body": "Registro gratis · Verificación por correo · Un comando por dispositivo",
-    "cta": "Empezar a usar MeshBridge"
-  },
-  "footer": {
-    "tagline": "Malla privada de dispositivos y transferencia de archivos grandes",
-    "stack": "Autoalojado · SQLite en un solo archivo · un binario Go"
-  },
   "auth": {
-    "panelTitle": "El plano de control coordina. Tus archivos viajan de dispositivo a dispositivo.",
-    "panelP1": "Cifrado WireGuard de extremo a extremo",
-    "panelP2": "Bloques de 64 MiB que se reanudan tras cortes",
-    "panelP3": "Verificación BLAKE3 en cada bloque",
+    "panelTitle": "Una cuenta MineAI para cada proyecto.",
+    "panelP1": "Cambia de proyecto desde una sola plataforma",
+    "panelP2": "Un acceso seguro para tu espacio de trabajo",
+    "panelP3": "Los datos de tus proyectos permanecen separados",
     "email": "Correo electrónico",
     "emailPh": "tu@ejemplo.com",
     "emailOrUser": "Correo o nombre de usuario",
@@ -146,15 +62,15 @@
     },
     "login": {
       "title": "Bienvenido de nuevo",
-      "sub": "Inicia sesión en tu consola MeshBridge.",
+      "sub": "Inicia sesión en tu cuenta de la plataforma MineAI.",
       "submit": "Iniciar sesión",
       "forgot": "¿Olvidaste la contraseña?",
-      "noAccount": "¿Nuevo en MeshBridge?",
+      "noAccount": "¿Nuevo en MineAI?",
       "create": "Crear una cuenta"
     },
     "register": {
       "title": "Crea tu cuenta",
-      "sub": "Verifica tu correo y conecta tus dispositivos.",
+      "sub": "Verifica tu correo y termina de configurar tu cuenta de MineAI.",
       "submit": "Crear cuenta",
       "haveAccount": "¿Ya tienes cuenta?",
       "success": "Bienvenido a bordo — tu cuenta está lista.",
@@ -167,7 +83,8 @@
       "remembered": "¿Te acordaste?",
       "success": "Contraseña actualizada. Inicia sesión con la nueva — las demás sesiones se han cerrado."
     },
-    "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo."
+    "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo.",
+    "alt": "O continúa con"
   },
   "setup": {
     "title": "Configura tu plano de control",
@@ -511,7 +428,10 @@
       "tunSave": "Guardar límites",
       "tunSaved": "Límites guardados",
       "tunOn": "Túneles activados",
-      "tunOff": "Túneles desactivados"
+      "tunOff": "Túneles desactivados",
+      "groupPlatform": "Acceso y correo de MineAI",
+      "groupPlatformNote": "Estos ajustes afectan a toda la plataforma MineAI: todos los proyectos inician sesión con este sistema de cuentas.",
+      "groupProject": "MeshBridge"
     }
   },
   "err": {
@@ -546,6 +466,115 @@
     "noAdminEmail": "Tu cuenta no tiene correo para enviar la prueba.",
     "pickDevices": "Elige dispositivo de origen y de destino.",
     "pickProject": "Elige o crea primero un proyecto.",
-    "projectName": "Introduce un nombre de proyecto."
+    "projectName": "Introduce un nombre de proyecto.",
+    "google": {
+      "notConfigured": "El inicio de sesión con Google no está configurado en este servidor.",
+      "unavailable": "El inicio de sesión con Google no está disponible ahora. Inténtalo en un momento o usa tu contraseña.",
+      "invalid": "No pudimos verificar ese inicio de sesión con Google. Inténtalo de nuevo.",
+      "unverified": "El correo de tu cuenta de Google no está verificado. Verifícalo en Google o inicia sesión con tu contraseña.",
+      "linkRequired": "Ya existe una cuenta con este correo. Inicia sesión con su contraseña y vincula Google en Ajustes.",
+      "alreadyLinked": "Esta cuenta, o esta cuenta de Google, ya está vinculada a otra.",
+      "lastLogin": "Primero define una contraseña: ahora mismo Google es la única forma de entrar en esta cuenta.",
+      "load": "No se pudo cargar el inicio de sesión con Google. Comprueba que este navegador llega a Google o usa tu contraseña.",
+      "badClientId": "Eso no parece un ID de cliente web de Google (…apps.googleusercontent.com)."
+    },
+    "accountDisabled": "Esta cuenta está desactivada. Contacta con un administrador.",
+    "forbidden": "No tienes permiso para hacer eso.",
+    "unavailable": "El servicio no está disponible por el momento. Inténtalo de nuevo en breve.",
+    "origin": "Esa solicitud no vino de este sitio y se bloqueó. Recarga la página e inténtalo de nuevo."
+  },
+  "portal": {
+    "pageTitle": "MineAI — Tus proyectos",
+    "eyebrow": "La plataforma MineAI",
+    "title": "Un lugar para cada proyecto.",
+    "lede": "Lee, escribe, crea y explora. Cada proyecto es su propio espacio y una sola cuenta MineAI abre todos.",
+    "projects": "Tus proyectos",
+    "open": "Abrir proyecto",
+    "folio": "Bibliotecas de documentos, respuestas con fuentes y grafos de conocimiento.",
+    "inkwell": "Libros, capítulos y un compañero de escritura.",
+    "parley": "Asistentes personalizados, conversaciones y tutoría con IA.",
+    "codebench": "Sesiones de programación, terminales y ejecutores propios.",
+    "echo": "Diario, reflexiones personales e historias interactivas.",
+    "hearthvale": "Construye una aldea y guía a sus habitantes durante las estaciones.",
+    "toolshed": "Escanea, convierte y comparte archivos desde el navegador.",
+    "meshbridge": "Conexiones privadas entre dispositivos y acceso a servicios internos.",
+    "nav": "Plataforma",
+    "navProjects": "Proyectos",
+    "projectsSub": "Cada uno se abre en su propia dirección y guarda sus propios datos.",
+    "browse": "Ver proyectos",
+    "principlesTitle": "Cómo funciona MineAI",
+    "p1Title": "Una sola cuenta",
+    "p1Body": "Inicia sesión una vez con tu cuenta MineAI. Los proyectos te reconocen sin pedirte otra contraseña.",
+    "p2Title": "Separados a propósito",
+    "p2Body": "Cada proyecto tiene su dirección, sus datos y sus roles. Nada se comparte salvo que tú lo decidas.",
+    "p3Title": "Siempre a mano",
+    "p3Body": "El menú de proyectos de cada proyecto te devuelve aquí o te lleva al siguiente."
+  },
+  "sso": {
+    "providerTitle": "Continuar con MineAI",
+    "disabled": "El inicio de sesión en la plataforma no está activado en esta instalación.",
+    "loginContinue": "Inicia sesión en MineAI para continuar a tu aplicación."
+  },
+  "art": {
+    "kickerPlatform": "MineAI",
+    "kickerProject": "Control ≠ Data"
+  },
+  "mb": {
+    "login": {
+      "title": "Entra en MeshBridge",
+      "sub": "Gestiona tus dispositivos, transferencias y túneles.",
+      "noAccount": "¿Nuevo en MeshBridge?"
+    },
+    "register": {
+      "title": "Crea tu cuenta",
+      "sub": "Verifica tu correo para empezar a usar MeshBridge. La misma cuenta sirve en el resto de MineAI."
+    },
+    "art": {
+      "title": "Tus dispositivos, conectados directamente.",
+      "p1": "Una malla privada entre tus propios equipos",
+      "p2": "Los archivos grandes viajan directo de un dispositivo a otro",
+      "p3": "El plano de control nunca transporta tus datos"
+    },
+    "backToPlatform": "Plataforma MineAI",
+    "consoleNav": "Consola de MeshBridge",
+    "signOutPlatform": "Cerrar también la sesión de MineAI",
+    "sso": {
+      "button": "Continuar con MineAI",
+      "title": "Iniciando tu sesión",
+      "working": "Completando tu inicio de sesión con MineAI…",
+      "failed": "No se pudo completar el inicio de sesión con MineAI. Inténtalo de nuevo o usa otro método.",
+      "retry": "Reintentar",
+      "useLogin": "Usar otro método"
+    }
+  },
+  "service": {
+    "title": "Servicio no disponible por el momento",
+    "text": "El servidor no respondió correctamente. No se cerró ninguna sesión; inténtalo de nuevo en un momento.",
+    "textNetwork": "No podemos contactar con el servidor. Revisa tu conexión y vuelve a intentarlo.",
+    "retry": "Reintentar"
+  },
+  "gset": {
+    "title": "Inicio de sesión con Google",
+    "desc": "Permite entrar en MineAI y MeshBridge con una cuenta de Google, además de la contraseña.",
+    "client": "ID de cliente web",
+    "placeholder": "123456789012-abc123.apps.googleusercontent.com",
+    "on": "Activado",
+    "off": "Desactivado",
+    "srcSettings": "Guardado aquí. Un cambio se aplica en la siguiente página de inicio de sesión; no hace falta reiniciar.",
+    "srcEnv": "Definido por el entorno del servidor (MESH_GOOGLE_CLIENT_ID). Guardar un valor aquí lo sustituye al instante; cambiar la variable de entorno requiere reiniciar el servicio.",
+    "srcDisabled": "Desactivado aquí. El valor del entorno se ignora hasta que vuelvas a guardar un ID de cliente.",
+    "srcNone": "Sin configurar. El botón de Google permanece oculto; el acceso con contraseña no se ve afectado.",
+    "origins": "Orígenes de JavaScript autorizados que añadir en Google Cloud",
+    "originsHint": "Añade todos los orígenes de arriba al cliente OAuth en Google Cloud Console (API y servicios → Credenciales). Google rechaza el inicio de sesión desde un origen que no figure.",
+    "saved": "Ajustes de Google guardados."
+  },
+  "glink": {
+    "title": "Cuenta de Google",
+    "desc": "Vincula una cuenta de Google para entrar con un clic.",
+    "linked": "Vinculada: puedes entrar con Google.",
+    "unlink": "Desvincular",
+    "unlinkConfirm": "¿Desvincular tu cuenta de Google? Seguirás pudiendo entrar con tu contraseña.",
+    "done": "Cuenta de Google vinculada.",
+    "removed": "Cuenta de Google desvinculada."
   }
 }

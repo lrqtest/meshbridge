@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check-i18n.py — keep the web UI's dictionaries honest.
 
-* every key referenced by web/index.html and web/assets/app.js exists in en.json
+* UI/shared-chrome keys exist in the merged kit + Mesh dictionary (Mesh wins collisions)
 * every locale has exactly en.json's keys, the same {placeholders}, and the
   plural categories its language needs (Intl.PluralRules)
 
@@ -15,6 +15,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 I18N = WEB / "assets" / "i18n"
+KIT_WEB = ROOT.parent / "kit" / "web" / "assets" / "kit"
+KIT_I18N = KIT_WEB / "i18n"
 LOCALES = ["en", "zh-CN", "zh-TW", "ja", "ko", "es", "fr", "de", "pt-BR", "ru"]
 # CLDR cardinal categories actually selected for integers.
 PLURALS = {"en": {"one", "other"}, "es": {"one", "many", "other"}, "fr": {"one", "many", "other"},
@@ -43,7 +45,7 @@ def placeholders(v):
 
 def used_keys():
     html = (WEB / "index.html").read_text("utf-8")
-    js = (WEB / "assets" / "app.js").read_text("utf-8")
+    js = "\n".join(p.read_text("utf-8") for p in [WEB / "assets" / "app.js", KIT_WEB / "chrome.js", KIT_WEB / "sso.js"])
     keys = set(re.findall(r'data-i18n="([\w.]+)"', html))
     for attr in re.findall(r'data-i18n-attr="([^"]+)"', html):
         keys.update(p.split(":", 1)[1].strip() for p in attr.split(";") if ":" in p)
@@ -55,9 +57,15 @@ def used_keys():
 
 def main():
     problems = []
+    if not (KIT_I18N / "en.json").is_file():
+        print("MeshBridge requires the sibling MineAI kit checkout at ../kit for shared UI dictionaries.")
+        return 1
     en = flatten(json.loads((I18N / "en.json").read_text("utf-8")))
+    # This is core.js's explicit precedence: flattened per-app keys override
+    # kit keys, while kit-only chrome and loading labels remain available.
+    merged = flatten(json.loads((KIT_I18N / "en.json").read_text("utf-8"))) | en
     for k in sorted(used_keys()):
-        if k not in en and not k.endswith("."):
+        if k not in merged and not k.endswith("."):
             problems.append(f"en.json: missing key used by UI: {k}")
     used = used_keys()
     for k in sorted(en):

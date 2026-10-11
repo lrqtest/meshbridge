@@ -1,25 +1,33 @@
 <!doctype html>
-<html lang="zh-CN" dir="ltr">
+<html lang="zh-CN" dir="ltr" data-app="mb">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<script src="/assets/kit/sso.js"></script>
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f3f0e8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#121410" media="(prefers-color-scheme: dark)">
-<title>MeshBridge</title>
-<meta name="description" content="MeshBridge joins your devices into a private WireGuard mesh and moves large files directly between them.">
+<title>MineAI</title>
+<meta name="description" content="MineAI — documents, writing, conversations, coding, reflection, games, browser tools and private tunnels.">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/assets/fonts/inter-normal-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/fraunces-normal-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/fonts/fonts.css">
+<link rel="stylesheet" href="/assets/kit/core.css">
 <link rel="stylesheet" href="/assets/app.css">
-<script src="/assets/boot.js"></script>
+<script src="/assets/kit/boot.js"></script>
+<script src="/assets/kit/core.js" defer></script>
+<script src="/assets/kit/cache.js" defer></script>
+<script src="/assets/kit/chrome.js" defer></script>
+<script src="/assets/rules.js" defer></script>
 <script src="/assets/app.js" defer></script>
 </head>
 <body>
 <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
   <symbol id="i-mark" viewBox="0 0 32 32"><rect class="m-bg" width="32" height="32" rx="9"/><path class="m-base" d="M8 22h16"/><path class="m-fg" d="M8 22C9.6 14.2 13 11.2 16 11.2S22.4 14.2 24 22"/><circle class="m-dot" cx="8" cy="22" r="2.7"/><circle class="m-dot" cx="24" cy="22" r="2.7"/><circle class="m-dot" cx="16" cy="11.2" r="2.7"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-arrow-ur" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.4 2.6 3.7 5.6 3.7 9s-1.3 6.4-3.7 9c-2.4-2.6-3.7-5.6-3.7-9S9.6 5.6 12 3z"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.8v2M12 19.2v2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M2.8 12h2M19.2 12h2M5.5 18.5l1.4-1.4M17.1 6.9l1.4-1.4"/></symbol>
@@ -61,162 +69,97 @@
 <a class="skip" href="#main" data-skip data-i18n="common.skipToContent">Skip to content</a>
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
-<!-- ═════════════════════════ LANDING ═════════════════════════ -->
+<!-- ═════════════════════════ MINEAI PLATFORM ═════════════════════════
+     The platform origin only: project navigation and the platform account.
+     Nothing here belongs to a project console. -->
 <div class="view" id="view-landing" hidden>
   <header class="site-nav" id="site-nav">
     <div class="wrap nav-in">
-      <a class="brand" href="#/" aria-label="MeshBridge"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
-      <nav class="nav-links" aria-label="Sections">
-        <a href="#what" data-scroll="what" data-i18n="nav.what"></a>
-        <a href="#principle" data-scroll="principle" data-i18n="nav.principle"></a>
-        <a href="#how" data-scroll="how" data-i18n="nav.how"></a>
+      <a class="brand" href="/" aria-label="MineAI"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span class="wordmark">MineAI</span></a>
+      <nav class="nav-links" data-i18n-attr="aria-label:portal.nav">
+        <a href="#projects" data-scroll="projects" data-i18n="portal.navProjects"></a>
       </nav>
       <div class="nav-tools">
         <div class="lang-picker" data-lang-picker></div>
         <button class="icon-btn theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:common.toggleTheme;title:common.toggleTheme"><svg class="icon i-sun"><use href="#i-sun"/></svg><svg class="icon i-moon"><use href="#i-moon"/></svg></button>
-        <a class="btn btn-quiet btn-sm" href="#/login" data-i18n="common.signIn"></a>
-        <a class="btn btn-primary btn-sm" href="#/register" data-cta="register" data-i18n="common.getStarted"></a>
+        <div class="acct" id="acct"></div>
       </div>
     </div>
   </header>
-
-  <main id="main">
-    <section class="hero wrap">
-      <p class="eyebrow reveal"><span class="pulse"></span><span data-i18n="hero.eyebrow"></span></p>
-      <h1 class="display hero-title reveal"><span data-i18n="hero.title"></span> <em data-i18n="hero.titleEm"></em></h1>
-      <p class="lede reveal" data-i18n="hero.lede"></p>
-      <div class="cta-row reveal">
-        <a class="btn btn-primary btn-lg" href="#/register" data-cta="register"><span data-i18n="hero.ctaPrimary"></span><svg class="icon arrow"><use href="#i-arrow"/></svg></a>
-        <a class="btn btn-outline btn-lg" href="#/login" data-i18n="hero.ctaSecondary"></a>
-      </div>
-      <p class="fine reveal" data-i18n="hero.fine"></p>
-    </section>
-
-    <section class="wrap map-wrap reveal">
-      <figure class="terrain" id="hero-map" role="img" data-i18n-attr="aria-label:map.aria">
-        <svg class="terrain-svg" data-terrain="hero" preserveAspectRatio="none" aria-hidden="true"></svg>
-        <div class="map-labels" aria-hidden="true">
-          <div class="map-label" data-node="nas"><b data-i18n="map.nas"></b><span>100.64.0.2</span></div>
-          <div class="map-label" data-node="laptop"><b data-i18n="map.laptop"></b><span>100.64.0.5</span></div>
-          <div class="map-label" data-node="studio"><b data-i18n="map.studio"></b><span>100.64.0.9</span></div>
-          <div class="map-label ctrl" data-node="control"><b data-i18n="map.control"></b><span data-i18n="map.controlNote"></span></div>
-        </div>
-        <figcaption class="map-legend">
-          <span><i></i><span data-i18n="map.legendDirect"></span></span>
-          <span><i class="sig"></i><span data-i18n="map.legendSignal"></span></span>
-        </figcaption>
-      </figure>
-    </section>
-
-    <section class="wrap">
-      <div class="facts">
-        <div class="fact reveal"><div class="fact-v display">P2P</div><div class="fact-l" data-i18n="facts.p2pLabel"></div></div>
-        <div class="fact reveal"><div class="fact-v display">64 MiB</div><div class="fact-l" data-i18n="facts.chunkLabel"></div></div>
-        <div class="fact reveal"><div class="fact-v display">BLAKE3</div><div class="fact-l" data-i18n="facts.hashLabel"></div></div>
-        <div class="fact reveal"><div class="fact-v display">≈ 0</div><div class="fact-l" data-i18n="facts.zeroLabel"></div></div>
+  <main id="main" class="platform-main">
+    <section class="hero wrap platform-hero" aria-labelledby="platform-title">
+      <p class="eyebrow" data-i18n="portal.eyebrow"></p>
+      <h1 class="display hero-title" id="platform-title" data-i18n="portal.title"></h1>
+      <p class="lede" data-i18n="portal.lede"></p>
+      <div class="cta-row">
+        <a class="btn btn-primary btn-lg" href="#projects" data-scroll="projects"><span data-i18n="portal.browse"></span><svg class="icon arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       </div>
     </section>
-
-    <section class="section wrap" id="what">
-      <div class="sec-head">
-        <div class="reveal"><p class="kicker" data-i18n="what.kicker"></p><h2 class="display sec-title" data-i18n="what.title"></h2></div>
-        <p class="sec-body reveal" data-i18n="what.body"></p>
-      </div>
-      <div class="cards">
-        <article class="card reveal">
-          <div class="card-ic"><svg class="icon"><use href="#i-mesh"/></svg></div>
-          <h3 class="display card-title" data-i18n="what.c1Title"></h3>
-          <p class="card-body" data-i18n="what.c1Body"></p>
-          <p class="card-tag" data-i18n="what.c1Tag"></p>
-        </article>
-        <article class="card reveal">
-          <div class="card-ic clay"><svg class="icon"><use href="#i-box"/></svg></div>
-          <h3 class="display card-title" data-i18n="what.c2Title"></h3>
-          <p class="card-body" data-i18n="what.c2Body"></p>
-          <p class="card-tag" data-i18n="what.c2Tag"></p>
-        </article>
-        <article class="card reveal">
-          <div class="card-ic slate"><svg class="icon"><use href="#i-route"/></svg></div>
-          <h3 class="display card-title" data-i18n="what.c3Title"></h3>
-          <p class="card-body" data-i18n="what.c3Body"></p>
-          <p class="card-tag" data-i18n="what.c3Tag"></p>
-        </article>
-      </div>
-    </section>
-
-    <div class="band" id="principle">
-      <section class="section wrap">
-        <div class="sec-head">
-          <div class="reveal"><p class="kicker" data-i18n="principle.kicker"></p><h2 class="display sec-title" data-i18n="principle.title"></h2></div>
-          <p class="sec-body reveal" data-i18n="principle.body"></p>
-        </div>
-        <ol class="ladder reveal">
-          <li class="rung r1">
-            <div class="rung-from"><span class="rung-n">1</span><div><div class="rung-name" data-i18n="principle.r1Name"></div><div class="rung-note" data-i18n="principle.r1Note"></div></div></div>
-            <div class="rung-line"><span class="rung-flow" data-i18n="principle.r1Flow"></span><i class="packet"></i></div>
-            <div class="rung-to"><div class="rung-name" data-i18n="principle.dest"></div><div class="rung-note" data-i18n="principle.r1DestNote"></div></div>
-          </li>
-          <li class="rung r2">
-            <div class="rung-from"><span class="rung-n">2</span><div><div class="rung-name" data-i18n="principle.r2Name"></div><div class="rung-note" data-i18n="principle.r2Note"></div></div></div>
-            <div class="rung-line"><i class="packet"></i></div>
-            <div class="rung-to"><div class="rung-name" data-i18n="principle.dest"></div><div class="rung-note" data-i18n="principle.r2DestNote"></div></div>
-          </li>
-          <li class="rung r3">
-            <div class="rung-from"><span class="rung-n">3</span><div><div class="rung-name" data-i18n="principle.r3Name"></div><div class="rung-note" data-i18n="principle.r3Note"></div></div></div>
-            <div class="rung-line"><i class="packet"></i></div>
-            <div class="rung-to"><div class="rung-name" data-i18n="principle.dest"></div><div class="rung-note" data-i18n="principle.r3DestNote"></div></div>
-          </li>
-          <li class="rung refused">
-            <div class="rung-from"><span class="rung-n">✕</span><div><div class="rung-name" data-i18n="principle.r4Name"></div><div class="rung-note" data-i18n="principle.r4Note"></div></div></div>
-            <div class="rung-line"><i class="packet"></i><span class="x-mark"><svg class="icon"><use href="#i-x"/></svg></span></div>
-            <div class="rung-to"><div class="rung-name" data-i18n="principle.r4Dest"></div><div class="rung-note" data-i18n="principle.r4DestNote"></div></div>
-          </li>
-        </ol>
-      </section>
-    </div>
-
-    <section class="section wrap" id="how">
-      <div class="sec-head">
-        <div class="reveal"><p class="kicker" data-i18n="how.kicker"></p><h2 class="display sec-title" data-i18n="how.title"></h2></div>
-        <p class="sec-body reveal" data-i18n="how.body"></p>
-      </div>
-      <div class="steps">
-        <div class="step reveal"><div class="step-n">01</div><h3 class="display step-title" data-i18n="how.s1Title"></h3><p class="step-body" data-i18n="how.s1Body"></p></div>
-        <div class="step reveal"><div class="step-n">02</div><h3 class="display step-title" data-i18n="how.s2Title"></h3><p class="step-body" data-i18n="how.s2Body"></p></div>
-        <div class="step reveal"><div class="step-n">03</div><h3 class="display step-title" data-i18n="how.s3Title"></h3><p class="step-body" data-i18n="how.s3Body"></p></div>
+    <section class="wrap platform-projects" id="projects" aria-labelledby="projects-title">
+      <div class="sec-head"><div><h2 class="display sec-title" id="projects-title" data-i18n="portal.projects"></h2><p class="sec-sub" data-i18n="portal.projectsSub"></p></div></div>
+      <div class="project-grid">
+        <a class="project-card" href="https://folio.mineai.top/" aria-labelledby="project-folio">
+          <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-folio" data-i18n="project.folio"></h3><p class="card-body" data-i18n="portal.folio"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
+        <a class="project-card" href="https://inkwell.mineai.top/" aria-labelledby="project-inkwell">
+          <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-audit"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-inkwell" data-i18n="project.inkwell"></h3><p class="card-body" data-i18n="portal.inkwell"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
+        <a class="project-card" href="https://parley.mineai.top/" aria-labelledby="project-parley">
+          <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-parley" data-i18n="project.parley"></h3><p class="card-body" data-i18n="portal.parley"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
+        <a class="project-card" href="https://codebench.mineai.top/" aria-labelledby="project-codebench">
+          <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-codebench" data-i18n="project.codebench"></h3><p class="card-body" data-i18n="portal.codebench"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
+        <a class="project-card" href="https://echo.mineai.top/" aria-labelledby="project-echo">
+          <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-echo" data-i18n="project.echo"></h3><p class="card-body" data-i18n="portal.echo"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
+        <a class="project-card" href="https://hearthvale.mineai.top/" aria-labelledby="project-hearthvale">
+          <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-mesh"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-hearthvale" data-i18n="project.hearthvale"></h3><p class="card-body" data-i18n="portal.hearthvale"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
+        <a class="project-card" href="https://toolshed.mineai.top/" aria-labelledby="project-toolshed">
+          <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-toolshed" data-i18n="project.toolshed"></h3><p class="card-body" data-i18n="portal.toolshed"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
+        <a class="project-card project-mesh" href="https://meshbridge.mineai.top/" data-project-link="mb" aria-labelledby="project-meshbridge">
+          <span class="card-ic slate"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg></span>
+          <span class="card-text"><h3 class="display card-title" id="project-meshbridge" data-i18n="project.mb"></h3><p class="card-body" data-i18n="portal.meshbridge"></p></span>
+          <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
+        </a>
       </div>
     </section>
-
-    <section class="wrap closing">
-      <div class="closing-card reveal">
-        <svg class="terrain-svg" data-terrain="closing" preserveAspectRatio="none" aria-hidden="true"></svg>
-        <h2 class="display closing-title" data-i18n="closing.title"></h2>
-        <p class="closing-body" data-i18n="closing.body"></p>
-        <a class="btn btn-lg" href="#/register" data-cta="register"><span data-i18n="closing.cta"></span><svg class="icon arrow"><use href="#i-arrow"/></svg></a>
-      </div>
+    <section class="wrap platform-principles" aria-labelledby="principles-title">
+      <h2 class="sr-only" id="principles-title" data-i18n="portal.principlesTitle"></h2>
+      <ul class="principles">
+        <li><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg><div><b data-i18n="portal.p1Title"></b><span data-i18n="portal.p1Body"></span></div></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><div><b data-i18n="portal.p2Title"></b><span data-i18n="portal.p2Body"></span></div></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><div><b data-i18n="portal.p3Title"></b><span data-i18n="portal.p3Body"></span></div></li>
+      </ul>
     </section>
   </main>
-
-  <footer class="site-footer">
-    <div class="wrap">
-      <div class="foot-in">
-        <a class="brand" href="#/"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
-        <span class="foot-tag" data-i18n="footer.tagline"></span>
-        <div class="foot-tools">
-          <div class="lang-picker" data-lang-picker data-up></div>
-          <button class="icon-btn theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:common.toggleTheme;title:common.toggleTheme"><svg class="icon i-sun"><use href="#i-sun"/></svg><svg class="icon i-moon"><use href="#i-moon"/></svg></button>
-        </div>
-      </div>
-      <div class="foot-bottom"><span>© <span data-year></span> MeshBridge</span><span data-i18n="footer.stack"></span></div>
-    </div>
-  </footer>
+  <footer class="site-footer"><div class="wrap foot-in"><span>© <span data-year></span> MineAI</span></div></footer>
 </div>
 
 <!-- ═════════════════════════ AUTH + SETUP ═════════════════════════ -->
 <div class="view auth-view" id="view-auth" hidden>
   <div class="auth-side">
     <header class="auth-top">
-      <a class="brand" href="#/"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
+      <div class="auth-brand">
+        <a class="brand" id="auth-brand" href="#/" data-i18n-attr="aria-label:common.backHome"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span class="wordmark" data-surface-brand>MineAI</span></a>
+        <a class="back-link" data-platform-home hidden><svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-left"/></svg><span data-i18n="mb.backToPlatform"></span></a>
+      </div>
       <div class="auth-tools">
         <div class="lang-picker" data-lang-picker></div>
         <button class="icon-btn theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:common.toggleTheme;title:common.toggleTheme"><svg class="icon i-sun"><use href="#i-sun"/></svg><svg class="icon i-moon"><use href="#i-moon"/></svg></button>
@@ -226,8 +169,8 @@
     <main class="auth-main" id="main-auth">
       <!-- login -->
       <section class="auth-card" data-panel="login" hidden>
-        <h1 class="display auth-title" data-i18n="auth.login.title"></h1>
-        <p class="auth-sub" data-i18n="auth.login.sub"></p>
+        <h1 class="display auth-title" data-i18n-platform="auth.login.title" data-i18n-project="mb.login.title"></h1>
+        <p class="auth-sub" data-i18n-platform="auth.login.sub" data-i18n-project="mb.login.sub"></p>
         <div class="callout" data-role="notice" hidden><svg class="icon"><use href="#i-info"/></svg><div data-role="notice-text"></div></div>
         <form id="form-login" novalidate>
           <label class="field"><span class="label" data-i18n="auth.emailOrUser"></span>
@@ -237,13 +180,40 @@
           <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
           <div class="form-actions"><button class="btn btn-primary btn-lg btn-block" type="submit" data-i18n="auth.login.submit"></button></div>
         </form>
-        <p class="auth-alt" data-reg-link><span data-i18n="auth.login.noAccount"></span> <a class="link" href="#/register" data-i18n="auth.login.create"></a></p>
+        <div class="alt-auth" id="alt-auth" hidden>
+          <div class="divider"><span data-i18n="auth.alt"></span></div>
+          <div class="alt-stack">
+            <button class="btn btn-outline btn-lg btn-block" id="mb-sso" type="button" hidden><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span data-i18n="mb.sso.button"></span></button>
+            <div class="gsign" id="mb-gsign" hidden>
+              <div class="gsign-btn" data-role="gsign-btn"></div>
+              <div class="callout warn" data-role="gsign-load" hidden><svg class="icon"><use href="#i-info"/></svg><div><span data-i18n="err.google.load"></span> <button class="link" type="button" data-role="gsign-retry" data-i18n="common.retry"></button></div></div>
+              <div class="callout error" data-role="gsign-err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="gsign-err-text"></div></div>
+            </div>
+          </div>
+        </div>
+        <p class="auth-alt" data-reg-link><span data-i18n-platform="auth.login.noAccount" data-i18n-project="mb.login.noAccount"></span> <a class="link" href="#/register" data-i18n="auth.login.create"></a></p>
+      </section>
+
+      <!-- platform authorization (platform origin): a project asked for a sign-in -->
+      <section class="auth-card" data-panel="sso" hidden>
+        <h1 class="display auth-title" data-i18n="sso.providerTitle"></h1>
+        <p class="auth-sub" id="sso-message" role="status" aria-live="polite" data-i18n="sso.working"></p>
+        <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+        <div class="form-actions"><button class="btn btn-outline" id="sso-retry" type="button" data-i18n="common.retry"></button><a class="link" href="#/" data-i18n="common.backHome"></a></div>
+      </section>
+
+      <!-- platform sign-in completion (project origin): the single-use code comes back here -->
+      <section class="auth-card" data-panel="callback" hidden>
+        <h1 class="display auth-title" data-i18n="mb.sso.title"></h1>
+        <p class="auth-sub" id="callback-message" role="status" aria-live="polite" data-i18n="mb.sso.working"></p>
+        <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+        <div class="form-actions" id="callback-actions" hidden><button class="btn btn-outline" id="callback-retry" type="button" data-i18n="mb.sso.retry"></button><a class="link" href="#/login" data-i18n="mb.sso.useLogin"></a></div>
       </section>
 
       <!-- register -->
       <section class="auth-card" data-panel="register" hidden>
-        <h1 class="display auth-title" data-i18n="auth.register.title"></h1>
-        <p class="auth-sub" data-i18n="auth.register.sub"></p>
+        <h1 class="display auth-title" data-i18n-platform="auth.register.title" data-i18n-project="mb.register.title"></h1>
+        <p class="auth-sub" data-i18n-platform="auth.register.sub" data-i18n-project="mb.register.sub"></p>
         <div class="callout warn" data-role="closed" hidden><svg class="icon"><use href="#i-lock"/></svg><div data-i18n="auth.register.closed"></div></div>
         <form id="form-register" novalidate>
           <label class="field"><span class="label" data-i18n="auth.email"></span>
@@ -323,13 +293,13 @@
       </section>
     </main>
 
-    <footer class="auth-foot"><span>© <span data-year></span> MeshBridge</span><a href="#/" class="link" data-i18n="common.backHome"></a></footer>
+    <footer class="auth-foot"><span>© <span data-year></span> MineAI</span><a href="#/" class="link" id="auth-foot-link" data-i18n="common.backHome"></a></footer>
   </div>
 
   <aside class="auth-art" aria-hidden="true">
     <div class="art-card">
       <svg class="terrain-svg" data-terrain="auth" preserveAspectRatio="none"></svg>
-      <p class="art-kicker">Control ≠ Data</p>
+      <p class="art-kicker" data-art="kicker"></p>
       <h2 class="display art-title" data-art="title"></h2>
       <ul class="art-list">
         <li><svg class="icon"><use href="#i-check"/></svg><span data-art="p1"></span></li>
@@ -342,12 +312,13 @@
 
 <!-- ═════════════════════════ CONSOLE ═════════════════════════ -->
 <div class="view app-view" id="view-app" hidden>
-  <aside class="sidebar" id="sidebar">
+  <aside class="sidebar" id="sidebar" data-i18n-attr="aria-label:mb.consoleNav">
     <div class="sb-top">
       <a class="brand" href="#/app/overview"><svg class="mark"><use href="#i-mark"/></svg><span class="wordmark">MeshBridge</span></a>
       <button class="icon-btn sm sb-close" type="button" data-nav-close data-i18n-attr="aria-label:common.close"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <nav class="sb-nav" aria-label="Console">
+    <a class="sb-platform" data-platform-home hidden><svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-left"/></svg><span data-i18n="mb.backToPlatform"></span></a>
+    <nav class="sb-nav" data-i18n-attr="aria-label:mb.consoleNav">
       <a href="#/app/overview" data-nav="overview"><svg class="icon"><use href="#i-grid"/></svg><span data-i18n="app.nav.overview"></span></a>
       <a href="#/app/devices" data-nav="devices"><svg class="icon"><use href="#i-device"/></svg><span data-i18n="app.nav.devices"></span><span class="count" data-count="devices"></span></a>
       <a href="#/app/transfers" data-nav="transfers"><svg class="icon"><use href="#i-transfer"/></svg><span data-i18n="app.nav.transfers"></span><span class="count" data-count="transfers"></span></a>
@@ -466,6 +437,24 @@
       <section class="page" data-page="settings" hidden>
         <div class="settings">
           <div class="panel set-card">
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.accountTitle"></h2><p class="set-desc" data-i18n="app.settings.accountDesc"></p></div></div>
+            <dl class="account-grid">
+              <div><dt data-i18n="auth.username"></dt><dd id="acc-name"></dd></div>
+              <div><dt data-i18n="auth.email"></dt><dd id="acc-email"></dd></div>
+              <div><dt data-i18n="app.settings.role"></dt><dd id="acc-role"></dd></div>
+            </dl>
+            <div class="set-row" id="glink-row" hidden>
+              <div class="set-k"><b data-i18n="glink.title"></b><span id="glink-state" data-i18n="glink.desc"></span></div>
+              <div class="glink-action"><div data-role="glink-btn"></div><button class="btn btn-outline btn-sm" type="button" id="glink-unlink" data-i18n="glink.unlink" hidden></button></div>
+            </div>
+            <div class="callout error" id="glink-err" hidden><svg class="icon"><use href="#i-alert"/></svg><div id="glink-err-text"></div></div>
+            <div class="form-actions">
+              <button class="btn btn-outline btn-sm" type="button" data-logout><svg class="icon"><use href="#i-logout"/></svg><span data-i18n="common.signOut"></span></button>
+              <button class="btn btn-quiet btn-sm" type="button" id="logout-platform" hidden><span data-i18n="mb.signOutPlatform"></span></button>
+            </div>
+          </div>
+
+          <div class="panel set-card">
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.appearanceTitle"></h2><p class="set-desc" data-i18n="app.settings.appearanceDesc"></p></div></div>
             <div class="set-row">
               <div class="set-k"><b data-i18n="app.settings.langLabel"></b><span data-i18n="app.settings.langDesc"></span></div>
@@ -481,19 +470,37 @@
             </div>
           </div>
 
-          <div class="panel set-card">
-            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.accountTitle"></h2><p class="set-desc" data-i18n="app.settings.accountDesc"></p></div>
-              <button class="btn btn-outline btn-sm" type="button" data-logout><svg class="icon"><use href="#i-logout"/></svg><span data-i18n="common.signOut"></span></button></div>
-            <dl class="account-grid">
-              <div><dt data-i18n="auth.username"></dt><dd id="acc-name"></dd></div>
-              <div><dt data-i18n="auth.email"></dt><dd id="acc-email"></dd></div>
-              <div><dt data-i18n="app.settings.role"></dt><dd id="acc-role"></dd></div>
-            </dl>
+          <div class="set-group" data-admin>
+            <h2 class="set-group-title" data-i18n="app.settings.groupPlatform"></h2>
+            <p class="set-group-note" data-i18n="app.settings.groupPlatformNote"></p>
+          </div>
+
+          <div class="panel set-card" data-admin>
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="gset.title"></h2><p class="set-desc" data-i18n="gset.desc"></p></div><span class="pill" id="gset-status"></span></div>
+            <div class="set-row stack">
+              <div class="set-k"><b data-i18n="gset.client"></b><span id="gset-source"></span></div>
+              <input class="input mono" id="set-google-client" type="text" maxlength="128" autocapitalize="none" spellcheck="false" autocomplete="off" data-i18n-attr="aria-label:gset.client;placeholder:gset.placeholder">
+            </div>
+            <div class="kv-block" id="gset-origins-block" hidden>
+              <span class="label" data-i18n="gset.origins"></span>
+              <ul class="origin-list" id="gset-origins"></ul>
+              <p class="hint" data-i18n="gset.originsHint"></p>
+            </div>
+            <div class="form-actions"><button class="btn btn-outline btn-sm" type="button" id="set-google-save" data-i18n="common.save"></button></div>
           </div>
 
           <div class="panel set-card" data-admin>
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.mailTitle"></h2><p class="set-desc" data-i18n="app.settings.mailDesc"></p></div><span class="pill" id="smtp-status"></span></div>
             <div data-mount="smtp-settings"></div>
+          </div>
+
+          <div class="panel set-card" data-admin>
+            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.regTitle"></h2><p class="set-desc" data-i18n="app.settings.regDesc"></p></div>
+              <button class="switch" type="button" role="switch" aria-checked="false" id="set-reg" data-i18n-attr="aria-label:app.settings.regTitle"></button></div>
+          </div>
+
+          <div class="set-group" data-admin>
+            <h2 class="set-group-title" data-i18n="app.settings.groupProject"></h2>
           </div>
 
           <div class="panel set-card" data-admin>
@@ -512,15 +519,24 @@
             </div>
             <div class="form-actions"><button class="btn btn-outline btn-sm" type="button" id="set-tun-save" data-i18n="app.settings.tunSave"></button></div>
           </div>
-
-          <div class="panel set-card" data-admin>
-            <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.regTitle"></h2><p class="set-desc" data-i18n="app.settings.regDesc"></p></div>
-              <button class="switch" type="button" role="switch" aria-checked="false" id="set-reg" data-i18n-attr="aria-label:app.settings.regTitle"></button></div>
-          </div>
         </div>
       </section>
     </main>
   </div>
+</div>
+
+<!-- ═════════════════════════ SERVICE FAULT ═════════════════════════
+     The server could not be reached or answered with a fault. The session is
+     kept: this is not a sign-out and never sends anyone to the login form. -->
+<div class="view service-view" id="view-service" hidden>
+  <main class="service-main" id="main-service">
+    <div class="service-card" role="alert">
+      <svg class="mark service-mark" aria-hidden="true"><use href="#i-mark"/></svg>
+      <h1 class="display service-title" data-i18n="service.title"></h1>
+      <p class="service-text" id="service-text" data-i18n="service.text"></p>
+      <div class="form-actions"><button class="btn btn-primary" id="service-retry" type="button" data-i18n="service.retry"></button><a class="btn btn-quiet" data-platform-home hidden><span data-i18n="mb.backToPlatform"></span></a></div>
+    </div>
+  </main>
 </div>
 
 <!-- ═════════════════════════ MODALS ═════════════════════════ -->

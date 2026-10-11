@@ -36,95 +36,11 @@
     "noMatch": "没有符合筛选条件的结果。",
     "actions": "操作"
   },
-  "nav": {
-    "what": "它是什么",
-    "principle": "核心原则",
-    "how": "使用流程"
-  },
-  "hero": {
-    "eyebrow": "自托管组网 · Control ≠ Data",
-    "title": "你的设备，连成一张私有网络。",
-    "titleEm": "大文件直达。",
-    "lede": "MeshBridge 把散落在家里、公司和云上的机器组成一张 **WireGuard 加密的私有 Mesh 网络**，在设备之间点对点直传大文件。速度由线路本身决定，而不是某个中转服务的限速。",
-    "ctaPrimary": "免费开始",
-    "ctaSecondary": "登录控制台",
-    "fine": "邮箱验证 · 自托管控制面 · 文件绝不经过第三方"
-  },
-  "map": {
-    "aria": "示意图：三台设备通过加密直连路径相连，控制面只承载信令。",
-    "nas": "家里 NAS",
-    "laptop": "笔记本",
-    "studio": "海外工作站",
-    "control": "控制面",
-    "controlNote": "仅信令",
-    "legendDirect": "文件流量，设备对设备",
-    "legendSignal": "仅协调 · KB 级"
-  },
-  "facts": {
-    "p2pLabel": "设备间 WireGuard 加密直连",
-    "chunkLabel": "分块传输，中断后从断点继续",
-    "hashLabel": "逐块校验，整文件再校验一次",
-    "zeroLabel": "控制面承载的文件流量"
-  },
-  "what": {
-    "kicker": "它是什么",
-    "title": "一台小服务器，管好你的网络与传输。",
-    "body": "家里 NAS 要把 200 GB 素材发给海外的工作站；公司服务器要把数据集同步到云上——网盘又慢、又限速、还不透明。MeshBridge 在你自己的 VPS 上运行一个轻量控制面，把设备组成私有网络，让每一次传输都只发生在设备之间。",
-    "c1Title": "私有 Mesh 网络",
-    "c1Body": "基于 Headscale 与 Tailscale 的自托管控制面。装上 Agent，设备自动入网；它的 100.x 地址只在你自己的网络里可见。准入、密钥、拓扑尽在掌握。",
-    "c1Tag": "WireGuard · 不经过第三方",
-    "c2Title": "大文件，完整送达",
-    "c2Body": "文件按 64 MiB 分块，逐块 BLAKE3 校验并用位图记录断点。传到一半断线，重连后从断点继续；整文件哈希比对一致才算完成。",
-    "c2Tag": "GB 到 TB · 可续传 · 可验证",
-    "c3Title": "自动择路的传输",
-    "c3Body": "设备间路径被持续探测：能直连就直连；网络作梗时，流量自动落到你自己的中继或对象存储。降级要连续多次采样确认，瞬时抖动不会误判。",
-    "c3Tag": "直连 → 中继 → S3 · 自动"
-  },
-  "principle": {
-    "kicker": "核心原则",
-    "title": "为什么你的文件从不绕路",
-    "body": "MeshBridge 的第一条铁律：控制面只做协调（信令、密钥、调度），流量只有 KB 级。文件永远走设备之间的通道；想挤 DERP 小水管的的大文件会被调度器直接拒绝。",
-    "dest": "目标设备",
-    "r1Name": "直连 P2P",
-    "r1Note": "首选 · 全速",
-    "r1Flow": "绝大多数流量，设备对设备",
-    "r1DestNote": "WireGuard 隧道",
-    "r2Name": "自建中继",
-    "r2Note": "直连不可用时 · 配额内",
-    "r2DestNote": "Peer Relay 节点",
-    "r3Name": "对象存储",
-    "r3Note": "异步兜底 · 分块上传",
-    "r3DestNote": "拉取后再校验",
-    "r4Name": "DERP 兜底",
-    "r4Note": "仅小文件（≤ 100 MiB）",
-    "r4Dest": "大文件拒绝",
-    "r4DestNote": "调度器强制拦截"
-  },
-  "how": {
-    "kicker": "使用流程",
-    "title": "从注册到第一次传输，十分钟",
-    "body": "不用手动配置 Agent，不用开任何入站端口。一切在浏览器里完成，每台设备只需一条命令。",
-    "s1Title": "创建账号",
-    "s1Body": "邮箱验证码注册，全程在浏览器里。首次部署会有简短的向导，带你建好管理员与邮件服务。",
-    "s2Title": "接入你的设备",
-    "s2Body": "控制台生成一条安装命令。粘贴到 NAS、服务器或工作站上：Tailscale 入网，MeshBridge Agent 随即上线汇报。",
-    "s3Title": "发起传输",
-    "s3Body": "选好源、目标和路径。调度器自动选最优路由，中断后自动续传，每一步都写进审计日志。"
-  },
-  "closing": {
-    "title": "把你拥有的设备，变成一张自己的网络。",
-    "body": "免费注册 · 邮箱验证 · 每台设备一条命令",
-    "cta": "开始使用 MeshBridge"
-  },
-  "footer": {
-    "tagline": "私有设备组网与大文件传输",
-    "stack": "自托管 · SQLite 单文件 · Go 单二进制"
-  },
   "auth": {
-    "panelTitle": "控制面负责协调，文件在设备之间直达。",
-    "panelP1": "端到端 WireGuard 加密",
-    "panelP2": "64 MiB 分块，中断可续传",
-    "panelP3": "每一块都有 BLAKE3 校验",
+    "panelTitle": "一个 MineAI 账号，进入所有项目。",
+    "panelP1": "从同一个平台首页切换项目",
+    "panelP2": "为工作空间提供统一安全登录",
+    "panelP3": "各项目数据彼此保持隔离",
     "email": "邮箱",
     "emailPh": "you@example.com",
     "emailOrUser": "邮箱或用户名",
@@ -146,15 +62,15 @@
     },
     "login": {
       "title": "欢迎回来",
-      "sub": "登录你的 MeshBridge 控制台。",
+      "sub": "登录你的 MineAI 平台账号。",
       "submit": "登录",
       "forgot": "忘记密码？",
-      "noAccount": "第一次使用 MeshBridge？",
+      "noAccount": "第一次使用 MineAI？",
       "create": "创建账号"
     },
     "register": {
       "title": "创建你的账号",
-      "sub": "验证邮箱，然后接入你的设备。",
+      "sub": "验证邮箱，完成 MineAI 平台账号设置。",
       "submit": "创建账号",
       "haveAccount": "已经有账号了？",
       "success": "欢迎加入——账号已就绪。",
@@ -167,7 +83,8 @@
       "remembered": "想起来了？",
       "success": "密码已更新。请用新密码登录——其他会话均已退出。"
     },
-    "sessionExpired": "会话已过期，请重新登录。"
+    "sessionExpired": "会话已过期，请重新登录。",
+    "alt": "或使用以下方式继续"
   },
   "setup": {
     "title": "初始化你的控制面",
@@ -507,7 +424,10 @@
       "tunSave": "保存限额",
       "tunSaved": "限额已保存",
       "tunOn": "隧道已启用",
-      "tunOff": "隧道已停用"
+      "tunOff": "隧道已停用",
+      "groupPlatform": "MineAI 的登录与邮件",
+      "groupPlatformNote": "这些设置作用于整个 MineAI 平台：所有项目都通过这套账号体系登录。",
+      "groupProject": "MeshBridge"
     }
   },
   "err": {
@@ -542,6 +462,115 @@
     "noAdminEmail": "你的账号没有邮箱地址，无法发送测试邮件。",
     "pickDevices": "请选择源设备和目标设备。",
     "pickProject": "请先选择或创建项目。",
-    "projectName": "请输入项目名称。"
+    "projectName": "请输入项目名称。",
+    "google": {
+      "notConfigured": "此服务器尚未设置 Google 登录。",
+      "unavailable": "Google 登录暂时不可用。请稍后重试，或使用密码登录。",
+      "invalid": "无法验证这次 Google 登录，请重试。",
+      "unverified": "你的 Google 账号邮箱尚未验证。请先在 Google 验证，或使用密码登录。",
+      "linkRequired": "已存在使用该邮箱的账号。请先用密码登录，再到设置中绑定 Google。",
+      "alreadyLinked": "此账号或此 Google 账号已绑定到另一个账号。",
+      "lastLogin": "请先设置密码——目前只能通过 Google 登录此账号。",
+      "load": "Google 登录无法加载。请确认此浏览器可以访问 Google，或使用密码登录。",
+      "badClientId": "这不像 Google Web 客户端 ID（…apps.googleusercontent.com）。"
+    },
+    "accountDisabled": "此账号已被停用。请联系管理员。",
+    "forbidden": "你没有执行此操作的权限。",
+    "unavailable": "服务暂时不可用，请稍后重试。",
+    "origin": "该请求并非来自本站，已被拦截。请刷新页面后重试。"
+  },
+  "portal": {
+    "pageTitle": "MineAI — 你的项目平台",
+    "eyebrow": "MineAI 平台",
+    "title": "让每个项目，都有自己的位置。",
+    "lede": "阅读、写作、编程与探索。每个项目都是独立的空间，一个 MineAI 账号即可进入全部。",
+    "projects": "我的项目",
+    "open": "打开项目",
+    "folio": "文档库、可溯源问答与知识图谱。",
+    "inkwell": "书籍与章节管理，和耐心的写作伙伴。",
+    "parley": "自定义助手、对话与 AI 学习辅导。",
+    "codebench": "编程会话、终端与自己的运行器。",
+    "echo": "日记、自我记录与互动故事。",
+    "hearthvale": "建设村庄，带领居民走过四季。",
+    "toolshed": "在浏览器里扫描、转换与分享文件。",
+    "meshbridge": "私有设备连接，以及内网服务的访问入口。",
+    "nav": "平台导航",
+    "navProjects": "项目",
+    "projectsSub": "每个项目都有独立的地址，数据也各自独立保存。",
+    "browse": "浏览项目",
+    "principlesTitle": "MineAI 如何运作",
+    "p1Title": "一个账号",
+    "p1Body": "用 MineAI 账号登录一次，各项目会直接认出你，无需再输入另一个密码。",
+    "p2Title": "各自独立",
+    "p2Body": "每个项目都有自己的地址、数据和角色。除非你主动分享，否则互不相通。",
+    "p3Title": "随时可达",
+    "p3Body": "每个项目里的项目菜单都能带你回到这里，或前往下一个项目。"
+  },
+  "sso": {
+    "providerTitle": "继续使用 MineAI",
+    "disabled": "此部署尚未启用平台登录。",
+    "loginContinue": "登录 MineAI 后即可继续进入应用。"
+  },
+  "art": {
+    "kickerPlatform": "MineAI",
+    "kickerProject": "Control ≠ Data"
+  },
+  "mb": {
+    "login": {
+      "title": "登录 MeshBridge",
+      "sub": "管理你的设备、传输与隧道。",
+      "noAccount": "第一次使用 MeshBridge？"
+    },
+    "register": {
+      "title": "创建你的账号",
+      "sub": "验证邮箱后即可使用 MeshBridge。同一账号也可用于 MineAI 的其他项目。"
+    },
+    "art": {
+      "title": "你的设备，直接相连。",
+      "p1": "你自己的机器之间的私有网状网络",
+      "p2": "大文件直接在设备之间传输",
+      "p3": "控制面从不经手你的数据"
+    },
+    "backToPlatform": "MineAI 平台",
+    "consoleNav": "MeshBridge 控制台",
+    "signOutPlatform": "同时退出 MineAI",
+    "sso": {
+      "button": "使用 MineAI 账号继续",
+      "title": "正在登录",
+      "working": "正在完成 MineAI 登录…",
+      "failed": "未能完成 MineAI 登录。请重试，或改用其他登录方式。",
+      "retry": "重试",
+      "useLogin": "改用其他登录方式"
+    }
+  },
+  "service": {
+    "title": "服务暂时不可用",
+    "text": "服务器没有正常响应。你没有被退出登录，请稍后重试。",
+    "textNetwork": "无法连接到服务器。请检查网络后重试。",
+    "retry": "重试"
+  },
+  "gset": {
+    "title": "Google 登录",
+    "desc": "让用户除密码外，也能用 Google 账号登录 MineAI 与 MeshBridge。",
+    "client": "Web 客户端 ID",
+    "placeholder": "123456789012-abc123.apps.googleusercontent.com",
+    "on": "已启用",
+    "off": "未启用",
+    "srcSettings": "在此处保存。修改后下一次打开登录页即生效，无需重启。",
+    "srcEnv": "由服务器环境变量（MESH_GOOGLE_CLIENT_ID）提供。在此保存会立即覆盖它；若修改环境变量，则需要重启服务。",
+    "srcDisabled": "已在此处关闭。重新保存客户端 ID 之前，环境变量的值会被忽略。",
+    "srcNone": "尚未配置。Google 按钮保持隐藏，密码登录不受影响。",
+    "origins": "需要在 Google Cloud 中添加的已获授权的 JavaScript 来源",
+    "originsHint": "请把以上每个来源都添加到 Google Cloud 控制台中的 OAuth 客户端（API 和服务 → 凭据）。未列出的来源发起的登录会被 Google 拒绝。",
+    "saved": "Google 登录设置已保存。"
+  },
+  "glink": {
+    "title": "Google 账号",
+    "desc": "绑定 Google 账号后，可一键登录。",
+    "linked": "已绑定——可以用 Google 登录。",
+    "unlink": "解除绑定",
+    "unlinkConfirm": "要解除 Google 账号绑定吗？你仍可使用密码登录。",
+    "done": "Google 账号已绑定。",
+    "removed": "已解除 Google 账号绑定。"
   }
 }

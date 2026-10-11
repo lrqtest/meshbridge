@@ -4,282 +4,144 @@
    inline script or style, so the page runs under a strict CSP. */
 "use strict";
 (() => {
-  // ───────────────────────── helpers ─────────────────────────
-  const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-  const SVGNS = "http://www.w3.org/2000/svg";
-  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
-
-  function h(tag, attrs, ...kids) {
-    const el = document.createElement(tag);
-    if (attrs) {
-      for (const [k, v] of Object.entries(attrs)) {
-        if (v == null || v === false) continue;
-        if (k === "class") el.className = v;
-        else if (k === "text") el.textContent = v;
-        else if (k === "i18n") el.dataset.i18n = v;
-        else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-        else el.setAttribute(k, v === true ? "" : v);
-      }
-    }
-    for (const kid of kids.flat()) {
-      if (kid == null || kid === false) continue;
-      el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
-    }
-    return el;
-  }
-  function svg(tag, attrs) {
-    const el = document.createElementNS(SVGNS, tag);
-    for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v);
-    return el;
-  }
-  function icon(name, cls) {
-    const s = svg("svg", { class: "icon" + (cls ? " " + cls : ""), "aria-hidden": "true" });
-    s.append(svg("use", { href: "#i-" + name }));
-    return s;
-  }
-  const store = {
-    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-    set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* private mode */ } },
-  };
-  const debounce = (fn, ms) => { let tm; return (...a) => { clearTimeout(tm); tm = setTimeout(() => fn(...a), ms); }; };
-  const listeners = {};
-  const on = (ev, fn) => (listeners[ev] = listeners[ev] || []).push(fn);
-  const emit = (ev, arg) => (listeners[ev] || []).forEach((fn) => { try { fn(arg); } catch (e) { console.error(e); } });
-
-  // ───────────────────────── i18n ─────────────────────────
-  const LANGS = [
-    { code: "en", name: "English", en: "English" },
-    { code: "zh-CN", name: "简体中文", en: "Chinese, Simplified" },
-    { code: "zh-TW", name: "繁體中文", en: "Chinese, Traditional" },
-    { code: "ja", name: "日本語", en: "Japanese" },
-    { code: "ko", name: "한국어", en: "Korean" },
-    { code: "es", name: "Español", en: "Spanish" },
-    { code: "fr", name: "Français", en: "French" },
-    { code: "de", name: "Deutsch", en: "German" },
-    { code: "pt-BR", name: "Português", en: "Portuguese" },
-    { code: "ru", name: "Русский", en: "Russian" },
-  ];
-  const dictCache = {};
-
-  function flatten(obj, prefix = "", out = {}) {
-    for (const [k, v] of Object.entries(obj)) {
-      const key = prefix ? prefix + "." + k : k;
-      if (v && typeof v === "object" && !("other" in v)) flatten(v, key, out);
-      else out[key] = v;
-    }
-    return out;
-  }
-  async function loadDict(code) {
-    if (!dictCache[code]) {
-      dictCache[code] = fetch(`/assets/i18n/${code}.json`, { cache: "no-cache" })
-        .then((r) => { if (!r.ok) throw new Error("i18n " + r.status); return r.json(); })
-        .then((j) => flatten(j))
-        .catch((e) => { delete dictCache[code]; throw e; });
-    }
-    return dictCache[code];
-  }
-  function matchLang(tag) {
-    if (!tag) return null;
-    const t = String(tag).toLowerCase();
-    const exact = LANGS.find((l) => l.code.toLowerCase() === t);
-    if (exact) return exact.code;
-    if (t.startsWith("zh")) return /hant|^zh-(tw|hk|mo)/.test(t) ? "zh-TW" : "zh-CN";
-    if (t.startsWith("pt")) return "pt-BR";
-    const base = t.split(/[-_]/)[0];
-    const b = LANGS.find((l) => l.code.split("-")[0].toLowerCase() === base);
-    return b ? b.code : null;
-  }
-  function detectLang() {
-    // Only an explicit choice (URL ?lang= or a previous pick, saved) selects a
-    // language; everyone else gets Chinese, this deployment's primary language.
-    const q = new URLSearchParams(location.search).get("lang");
-    for (const cand of [q, store.get("mb_lang")]) {
-      const m = matchLang(cand);
-      if (m) return m;
-    }
-    return "zh-CN";
-  }
-
-  const I18N = {
-    lang: "en", dict: {}, base: {}, plural: new Intl.PluralRules("en"),
-    async use(code, persist) {
-      const [base, dict] = await Promise.all([loadDict("en"), code === "en" ? null : loadDict(code).catch(() => null)]);
-      this.base = base;
-      this.dict = dict || base;
-      this.lang = dict || code === "en" ? code : "en";
-      this.plural = new Intl.PluralRules(this.lang);
-      if (persist) store.set("mb_lang", this.lang);
-      document.documentElement.lang = this.lang;
-      this.apply(document);
-      const desc = $('meta[name="description"]');
-      if (desc) desc.setAttribute("content", t("meta.description"));
-      emit("lang", this.lang);
-    },
-    apply(root) {
-      for (const el of $$("[data-i18n]", root)) setRich(el, t(el.dataset.i18n));
-      for (const el of $$("[data-i18n-attr]", root)) {
-        for (const pair of el.dataset.i18nAttr.split(";")) {
-          const i = pair.indexOf(":");
-          if (i > 0) el.setAttribute(pair.slice(0, i).trim(), t(pair.slice(i + 1).trim()));
-        }
-      }
-    },
-  };
-  function t(key, vars) {
-    let v = I18N.dict[key];
-    if (v == null) v = I18N.base[key];
-    if (v == null) return key;
-    if (typeof v === "object") v = v[I18N.plural.select(vars && typeof vars.n === "number" ? vars.n : 0)] ?? v.other;
-    if (!vars) return v;
-    return v.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
-  }
-  // Translations may mark emphasis with **…**; built as DOM nodes, never HTML.
-  function setRich(el, text) {
-    if (!text.includes("**")) { el.textContent = text; return; }
-    el.textContent = "";
-    text.split(/(\*\*[^*]+\*\*)/).forEach((part) => {
-      if (part.startsWith("**") && part.endsWith("**")) el.append(h("strong", null, part.slice(2, -2)));
-      else if (part) el.append(part);
-    });
-  }
-
-  // ───────────────────────── formatting ─────────────────────────
-  const fmt = {
-    num: (n) => new Intl.NumberFormat(I18N.lang).format(n),
-    bytes(n) {
-      if (n == null || isNaN(n)) return "—";
-      const units = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte", "petabyte"];
-      let v = Math.max(0, n), i = 0;
-      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-      return new Intl.NumberFormat(I18N.lang, { style: "unit", unit: units[i], unitDisplay: "short", maximumFractionDigits: i === 0 || v >= 100 ? 0 : 1 }).format(v);
-    },
-    pct: (x) => new Intl.NumberFormat(I18N.lang, { style: "percent", maximumFractionDigits: 0 }).format(x),
-    abs(ts) {
-      if (!ts) return "—";
-      return new Intl.DateTimeFormat(I18N.lang, { dateStyle: "medium", timeStyle: "short" }).format(new Date(ts * 1000));
-    },
-    rel(ts) {
-      if (!ts) return t("common.never");
-      const s = Math.round(Date.now() / 1000 - ts);
-      if (Math.abs(s) < 45) return t("common.justNow");
-      const rtf = new Intl.RelativeTimeFormat(I18N.lang, { numeric: "auto" });
-      if (Math.abs(s) < 3600) return rtf.format(-Math.round(s / 60), "minute");
-      if (Math.abs(s) < 86400) return rtf.format(-Math.round(s / 3600), "hour");
-      if (Math.abs(s) < 86400 * 30) return rtf.format(-Math.round(s / 86400), "day");
-      return new Intl.DateTimeFormat(I18N.lang, { dateStyle: "medium" }).format(new Date(ts * 1000));
-    },
-  };
+  // Kit supplies the shared DOM, storage, events, locale, theme and UI
+  // runtime. data-app="mb" preserves the existing mb_* storage namespace.
+  const K = window.Kit;
+  const { $, $$, h, icon, store, debounce, on, emit, LANGS, t, setRich,
+    detectLang, fmt, toast, ApiError, reduceMotion } = K;
+  const I18N = K.i18n, Theme = K.theme;
+  const { busy, clip, inlineCopy, emptyState, loadingRows } = K.ui;
+  // Mesh tables retain their existing outer table-wrap containers.
+  const table = (cols, rows) => K.ui.table(cols, rows, { wrap: false });
+  const drawTerrain = K.terrain.draw, drawVisibleTerrain = K.terrain.drawVisible;
   const short = (id) => (id ? String(id).slice(0, 8) : "—");
-
-  // ───────────────────────── theme ─────────────────────────
-  const Theme = {
-    get: () => store.get("mb_theme") || "system",
-    effective() {
-      const m = this.get();
-      return m !== "system" ? m : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  const Rules = window.MeshRules;
+  // The server decides which product this origin is (GET /api/v1/surface, read
+  // from the Host header). "platform" is MineAI: project navigation and the
+  // platform account. "project" is MeshBridge: sign-in and the console. A
+  // standalone install has one project surface. The shell never makes one look
+  // like the other, and never shares a session between them.
+  const Surface = {
+    loaded: false, kind: "project", split: false, platformURL: "", projectURL: "", baseURL: "", sso: false,
+    get isPlatform() { return this.kind === "platform"; },
+    get name() { return !this.loaded ? "" : this.isPlatform ? "MineAI" : "MeshBridge"; },
+    get info() { return { kind: this.kind, split: this.split, platformURL: this.platformURL, projectURL: this.projectURL }; },
+    // Headscale, agent downloads and tunnel URLs are routed on the platform
+    // origin only, so the console must not derive them from its own.
+    get serviceOrigin() { return this.baseURL || location.origin; },
+    // t-<slug>.<domain> tunnel hosts live beside the service origin too.
+    tunnelHost(sub) { const u = new URL(this.serviceOrigin); return u.protocol + "//" + sub + (u.port ? ":" + u.port : ""); },
+    async load() {
+      const s = await api("GET", "/api/v1/surface", null, { auth: false });
+      Object.assign(this, { loaded: true, kind: s.kind === "platform" ? "platform" : "project", split: !!s.split, platformURL: s.platform_url || "",
+        projectURL: s.project_url || "", baseURL: s.base_url || "", sso: !!s.sso });
     },
-    set(mode) {
-      store.set("mb_theme", mode === "system" ? null : mode);
-      if (mode === "system") document.documentElement.removeAttribute("data-theme");
-      else document.documentElement.setAttribute("data-theme", mode);
-      emit("theme", mode);
-    },
-    toggle() { this.set(this.effective() === "dark" ? "light" : "dark"); },
   };
 
-  // ───────────────────────── toasts ─────────────────────────
-  function toast(msg, kind = "ok") {
-    const el = h("div", { class: "toast " + kind }, icon(kind === "err" ? "alert" : kind === "info" ? "info" : "check"), h("div", null, msg));
-    $("#toasts").append(el);
-    const kill = () => { el.classList.add("out"); setTimeout(() => el.remove(), 320); };
-    const timer = setTimeout(kill, kind === "err" ? 6500 : 4200);
-    el.addEventListener("click", () => { clearTimeout(timer); kill(); });
-  }
+  // Where to go after signing in. Kept for this tab only, and only for a short
+  // while, so a reload on the sign-in page keeps it but a stale target never
+  // surprises a later visit.
+  const Resume = {
+    key: "mb_resume", ttl: 30 * 60 * 1000,
+    get() {
+      try { const v = JSON.parse(sessionStorage.getItem(this.key) || "null"); return v && Date.now() - v.t < this.ttl ? String(v.h || "") : ""; }
+      catch { return ""; }
+    },
+    set(hash) {
+      try { if (hash) sessionStorage.setItem(this.key, JSON.stringify({ h: hash, t: Date.now() })); else sessionStorage.removeItem(this.key); }
+      catch { /* storage is optional */ }
+    },
+    take() { const v = this.get(); this.set(""); return v; },
+  };
+  // The destination after a successful sign-in, validated for this surface.
+  const afterSignIn = () => {
+    const r = Resume.take();
+    return Surface.isPlatform ? (Rules.safePlatformResume(r) || "#/") : (Rules.safeResume(r) || "#/app/overview");
+  };
+  const Queries = K.createQueryCache({ maxEntries: 64 });
+  const cancelledQuery = () => Object.assign(new Error("Identity changed"), { name: "AbortError" });
 
-  // ───────────────────────── API ─────────────────────────
-  class ApiError extends Error {
-    constructor(status, code, message) { super(message); this.status = status; this.code = code; }
-  }
+  // Mesh keeps its API/session/hash router adapters: its /me response and
+  // setup/auth flow differ from kit accounts. No Kit.start or account router.
   const Session = {
-    token: () => store.get("mb_token") || "",
-    set(tok) { store.set("mb_token", tok || null); this._me = undefined; },
+    _knownToken: store.get("token") || "", epoch: 0,
+    token() {
+      const token = store.get("token") || "";
+      if (token !== this._knownToken) this.reset(token);
+      return token;
+    },
+    reset(token) {
+      this._knownToken = token; this.epoch++;
+      this._me = undefined; this._pending = null;
+      Queries.clear(); resetConsoleData();
+    },
+    set(tok) { store.set("token", tok || null); this.reset(store.get("token") || ""); },
     clear() { this.set(null); },
     _me: undefined,
     async me() {
       if (!this.token()) return null;
       if (this._me !== undefined) return this._me;
-      try { this._me = await api("GET", "/api/v1/me", null, { quiet401: true }); }
-      catch (e) { if (e.status === 401) this.clear(); this._me = null; }
-      return this._me;
+      if (this._pending) return this._pending;
+      const epoch = this.epoch;
+      const pending = (async () => {
+        try {
+          const me = await api("GET", "/api/v1/me", null, { quiet401: true });
+          if (this.token() === "" || this.epoch !== epoch) throw cancelledQuery();
+          this._me = me;
+        }
+        catch (e) { if (e.status !== 401) throw e; this.clear(); this._me = null; }
+        return this._me;
+      })();
+      this._pending = pending;
+      try { return await pending; }
+      finally { if (this.epoch === epoch && this._pending === pending) this._pending = null; }
     },
     expired() {
       if (!this.token()) return;
       this.clear();
+      Resume.set(Rules.safeResume(location.hash)); // come back to the page that expired
       flash = { panel: "login", text: t("auth.sessionExpired") };
-      go("#/login");
+      go("#/login", true);
     },
   };
   let flash = null;
 
   async function api(method, path, body, opts = {}) {
     const headers = {};
-    const tok = Session.token();
+    const tok = Session.token(), epoch = Session.epoch;
     if (tok && opts.auth !== false) headers.Authorization = "Bearer " + tok;
-    const init = { method, headers, cache: "no-store" };
+    const init = { method, headers, cache: "no-store", signal: opts.signal };
     if (body != null) { headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
     let r;
-    try { r = await fetch(path, init); } catch (e) { throw new ApiError(0, "network", e.message); }
+    try { r = await fetch(path, init); }
+    catch (e) {
+      if (K.isQueryCancelled(e) || Session.token() !== tok || Session.epoch !== epoch || opts.signal?.aborted) throw cancelledQuery();
+      throw new ApiError(0, "network", e.message);
+    }
     let data = {};
     try { data = await r.json(); } catch { /* empty body */ }
+    // An old response (including a 401) must not update or sign out a new
+    // identity. Query invalidation separately handles writes in the same scope.
+    if (Session.token() !== tok || Session.epoch !== epoch || opts.signal?.aborted) throw cancelledQuery();
     if (!r.ok) {
       const err = new ApiError(r.status, data.code || "", data.error || "HTTP " + r.status);
       if (r.status === 401 && tok && opts.auth !== false && !opts.quiet401) Session.expired();
       throw err;
     }
+    if (method !== "GET" && method !== "HEAD") {
+      // Conservative dependency invalidation: writes may affect counts,
+      // audit and related lists. Keep displayed values until fresh data lands.
+      Queries.invalidate((key) => key !== "health" && key !== "status");
+      auditGeneration++; auditPending = null;
+      if (path.startsWith("/api/v1/setup/") && !path.endsWith("/test")) Status.invalidate();
+    }
     return data;
   }
 
-  // Server errors are English strings + a code; map the known ones.
+  // Server errors are English strings + a code; rules.js maps them to wording.
   function errText(err, ctx) {
-    const m = String(err.message || "").toLowerCase();
-    const c = err.code;
-    if (err.status === 0) return t("err.network");
-    if (c === "rate_limited" || err.status === 429) {
-      const s = /wait (\d+)s/.exec(m);
-      if (s) return t("err.waitSeconds", { s: s[1] });
-      if (m.includes("daily")) return t("err.dailyLimit");
-      if (m.includes("busy")) return t("err.busy");
-      return t("err.tooMany");
-    }
-    if (c === "bad_code") return t("err.badCode");
-    if (c === "conflict") return m.includes("email") ? t("err.emailTaken") : t("err.projectExists");
-    if (c === "forbidden") {
-      if (m.includes("registration")) return t("err.regClosed");
-      if (m.includes("setup")) return t("err.setupDone");
-      if (m.includes("admin")) return t("err.adminOnly");
-    }
-    if (c === "mailer") return t("err.mailerOff");
-    if (c === "mail_send_failed") {
-      if (m.includes("smtp not configured")) return t("err.smtpMissing");
-      if (m.includes("invalid email")) return t("err.badEmail");
-      return t("err.mailFailed", { detail: err.message });
-    }
-    if (c === "unauthorized") return ctx === "login" ? t("err.badCredentials") : t("err.unauthorized");
-    if (c === "bad_request") {
-      if (m.includes("password must be")) return t("err.passwordShort");
-      if (m.includes("hostname")) return t("err.badHostname");
-      if (m.includes("must differ")) return t("err.sameDevice");
-      if (m.includes("relative")) return t("err.badPath");
-      if (m.includes("host, port and username")) return t("err.smtpRequired");
-      if (m.includes("none stored")) return t("err.smtpPassRequired");
-      if (m.includes("port must be")) return t("err.smtpPort");
-      if (m.includes("no valid target")) return t("err.noAdminEmail");
-      if (m.includes("src/dst")) return t("err.pickDevices");
-      if (m.includes("name required")) return t("err.projectName");
-    }
-    if (err.status >= 500) return t("err.server");
-    return err.message;
+    const hit = Rules.errorKey(err, ctx);
+    return hit ? t(hit.key, hit.params) : err.message;
   }
 
   function showErr(scope, msg) {
@@ -289,20 +151,124 @@
     $('[data-role="err-text"]', box).textContent = msg;
     box.hidden = false;
   }
-  async function busy(btn, fn) {
-    if (!btn) return fn();
-    btn.classList.add("is-busy");
-    btn.setAttribute("aria-busy", "true");
-    try { return await fn(); } finally { btn.classList.remove("is-busy"); btn.removeAttribute("aria-busy"); }
+
+  // ───────────────────────── Google sign-in ─────────────────────────
+  // Optional and additive. The Web client ID comes from setup/status, so
+  // saving it in Settings applies to the next page view without a restart; the
+  // credential is verified server-side before any session exists. The block is
+  // hidden when Google is not configured, and visible-but-explained when the
+  // Google script cannot be reached (blocked network, offline).
+  const Google = {
+    cid: "", tag: null, loading: null, handler: null, prompted: false,
+    ready: () => !!(window.google && google.accounts && google.accounts.id),
+    load() {
+      if (this.ready()) return Promise.resolve(true);
+      if (this.loading) return this.loading;
+      this.loading = new Promise((resolve, reject) => {
+        let done = false;
+        const fail = () => {
+          if (done) return;
+          done = true;
+          this.loading = null; if (this.tag) this.tag.remove(); this.tag = null;
+          reject(new Error("Google sign-in unavailable"));
+        };
+        if (!this.tag || !this.tag.isConnected) {
+          this.tag = h("script", { src: "https://accounts.google.com/gsi/client", async: true });
+          this.tag.addEventListener("error", fail, { once: true });
+          document.head.append(this.tag);
+        }
+        const started = Date.now();
+        const poll = () => {
+          if (done) return;
+          if (this.ready()) { done = true; resolve(true); return; }
+          if (Date.now() - started > 8000) { fail(); return; }
+          setTimeout(poll, 100);
+        };
+        poll();
+      });
+      return this.loading;
+    },
+    theme() {
+      const mode = Theme.get();
+      return mode === "dark" || (mode !== "light" && matchMedia("(prefers-color-scheme: dark)").matches) ? "filled_black" : "outline";
+    },
+    // One initialize per client ID; whichever page owns the button owns the callback.
+    init(cid) {
+      if (this.cid === cid) return;
+      google.accounts.id.initialize({ client_id: cid, callback: (resp) => { if (this.handler) this.handler(resp); }, use_fedcm_for_prompt: true });
+      this.cid = cid;
+    },
+    render(host) {
+      const w = host.clientWidth;
+      host.replaceChildren();
+      google.accounts.id.renderButton(host, { theme: this.theme(), size: "large", shape: "pill", text: "signin_with", logo_alignment: "center", width: w >= 200 ? Math.min(w, 400) : undefined });
+    },
+    // One Tap is offered once per visit to the sign-in page, never on a re-render.
+    prompt() {
+      if (this.prompted) return;
+      this.prompted = true;
+      try { google.accounts.id.prompt(); } catch { /* One Tap is optional */ }
+    },
+    leave() { this.prompted = false; try { if (this.ready()) google.accounts.id.cancel(); } catch { /* optional */ } },
+    signedOut() { try { if (this.ready()) google.accounts.id.disableAutoSelect(); } catch { /* optional */ } },
+  };
+  const gsignBox = () => $("#mb-gsign");
+  function clearGoogleError() {
+    const err = $('[data-role="gsign-err"]', gsignBox());
+    if (err) err.hidden = true;
   }
-  async function clip(text) {
-    try { await navigator.clipboard.writeText(text); }
-    catch {
-      const ta = h("textarea", { class: "sr-only", readonly: true });
-      ta.value = text; document.body.append(ta); ta.select();
-      try { document.execCommand("copy"); } finally { ta.remove(); }
+  function googleError(err) {
+    const callout = $('[data-role="gsign-err"]', gsignBox());
+    if (!callout) return;
+    $('[data-role="gsign-err-text"]', callout).textContent = errText(err, "google");
+    callout.hidden = false;
+  }
+  async function onGoogleLogin(resp) {
+    clearGoogleError();
+    try {
+      const d = await api("POST", "/api/v1/auth/google", { credential: resp.credential }, { auth: false });
+      Session.set(d.token);
+      go(afterSignIn());
+    } catch (err) { googleError(err); }
+  }
+  // Re-draw only the button (theme or width changed); never prompts again.
+  function redrawGoogle() {
+    const box = gsignBox();
+    if (!Google.ready() || !Google.cid || box.hidden || currentView !== "auth" || currentPanel !== "login") return;
+    const host = $('[data-role="gsign-btn"]', box);
+    if (!host.hidden) Google.render(host);
+  }
+  let altSeq = 0;
+  // The "or continue with" block of the sign-in form: the platform account
+  // (project origin only) and Google. Hidden entirely when neither applies.
+  async function mountAltAuth() {
+    const seq = ++altSeq, box = $("#alt-auth"), sso = $("#mb-sso"), g = gsignBox();
+    const st = await Status.get();
+    let ssoOn = false;
+    if (Surface.sso) { try { ssoOn = !!(await K.sso.status()).enabled; } catch { /* the password form still works */ } }
+    if (seq !== altSeq || currentPanel !== "login") return;
+    const cid = st && st.google_client_id ? String(st.google_client_id).trim() : "";
+    sso.hidden = !ssoOn;
+    g.hidden = !cid;
+    box.hidden = !(ssoOn || cid);
+    clearGoogleError();
+    if (!cid) { Google.leave(); return; }
+    const host = $('[data-role="gsign-btn"]', g), unreachable = $('[data-role="gsign-load"]', g);
+    unreachable.hidden = true; host.hidden = false;
+    Google.handler = onGoogleLogin;
+    try {
+      await Google.load();
+      if (seq !== altSeq || currentPanel !== "login") return;
+      Google.init(cid);
+      Google.render(host);
+      Google.prompt();
+    } catch {
+      host.hidden = true; unreachable.hidden = false;
     }
   }
+  on("theme", redrawGoogle);
+  let gsiResize = null;
+  window.addEventListener("resize", () => { clearTimeout(gsiResize); gsiResize = setTimeout(redrawGoogle, 250); });
   async function copyText(text, btn) {
     await clip(text);
     if (!btn) { toast(t("common.copied")); return; }
@@ -314,241 +280,31 @@
 
   // ───────────────────────── setup status ─────────────────────────
   const Status = {
-    _v: null, _at: 0,
     async get(force) {
-      if (!force && this._v && Date.now() - this._at < 20000) return this._v;
-      try { this._v = await api("GET", "/api/v1/setup/status", null, { auth: false }); this._at = Date.now(); }
-      catch { /* keep the last known value */ }
-      return this._v;
+      Session.token();
+      try { return await Queries.get("status", (signal) => api("GET", "/api/v1/setup/status", null, { auth: false, signal }), { ttl: 20000, force }); }
+      catch (err) { if (K.isQueryCancelled(err)) throw err; return Queries.peek("status") || null; }
     },
-    invalidate() { this._at = 0; },
+    invalidate() { Queries.invalidate("status"); },
   };
 
-  // ───────────────────────── language pickers ─────────────────────────
-  function mountLangPickers() {
-    for (const host of $$("[data-lang-picker]")) {
-      const btn = h("button", { class: "lp-btn", type: "button", "aria-haspopup": "listbox", "aria-expanded": "false" },
-        icon("globe"), h("span", { class: "lp-cur" }), icon("chevron", "chev"));
-      const menu = h("ul", { class: "lp-menu" + ("up" in host.dataset ? " up" : ""), role: "listbox", tabindex: "-1", hidden: true });
-      for (const l of LANGS) {
-        menu.append(h("li", { class: "lp-opt", role: "option", "data-lang": l.code, lang: l.code, "aria-selected": "false" },
-          h("span", null, l.name), h("span", { class: "lp-en" }, l.en)));
-      }
-      host.append(btn, menu);
-      let active = -1;
-      const opts = () => $$(".lp-opt", menu);
-      const highlight = (i) => {
-        const list = opts();
-        active = (i + list.length) % list.length;
-        list.forEach((o, j) => o.classList.toggle("is-active", j === active));
-        list[active].scrollIntoView({ block: "nearest" });
-      };
-      const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
-      const open = () => {
-        $$(".lp-menu").forEach((m) => { if (m !== menu) m.hidden = true; });
-        menu.hidden = false; btn.setAttribute("aria-expanded", "true");
-        highlight(LANGS.findIndex((l) => l.code === I18N.lang));
-        menu.focus();
-      };
-      const pick = async (code) => { close(); btn.focus(); if (code !== I18N.lang) await I18N.use(code, true); };
-      btn.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden ? open() : close(); });
-      menu.addEventListener("click", (e) => { const o = e.target.closest(".lp-opt"); if (o) pick(o.dataset.lang); });
-      menu.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowDown") { e.preventDefault(); highlight(active + 1); }
-        else if (e.key === "ArrowUp") { e.preventDefault(); highlight(active - 1); }
-        else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(opts()[active].dataset.lang); }
-        else if (e.key === "Escape" || e.key === "Tab") { close(); btn.focus(); }
-      });
-      document.addEventListener("click", (e) => { if (!host.contains(e.target)) close(); });
-      const sync = () => {
-        const cur = LANGS.find((l) => l.code === I18N.lang) || LANGS[0];
-        $(".lp-cur", btn).textContent = cur.name;
-        btn.setAttribute("aria-label", t("common.language") + ": " + cur.name);
-        opts().forEach((o) => o.setAttribute("aria-selected", String(o.dataset.lang === cur.code)));
-      };
-      on("lang", sync);
-    }
-    for (const b of $$("[data-theme-toggle]")) b.addEventListener("click", () => Theme.toggle());
-  }
-
-  // ───────────────────────── terrain (contour lines) ─────────────────────────
-  // A seeded height field → marching squares → joined polylines → Catmull-Rom
-  // curves. Deterministic per seed, sized to the element, no assets.
-  function rng(seed) {
-    let a = seed >>> 0;
-    return () => {
-      a = (a + 0x6d2b79f5) | 0;
-      let x = Math.imul(a ^ (a >>> 15), 1 | a);
-      x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
-      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  function contours(w, hgt, seed, opts = {}) {
-    const rnd = rng(seed);
-    const span = Math.max(w, hgt);
-    const hills = [];
-    for (let i = 0; i < (opts.hills || 7); i++) {
-      hills.push({ x: rnd() * w, y: rnd() * hgt, r: (0.16 + rnd() * 0.3) * span, a: (rnd() < 0.3 ? -0.7 : 1) * (0.55 + rnd() * 0.8) });
-    }
-    const fx = (2 * Math.PI) / (span * (0.5 + rnd() * 0.4)), fy = (2 * Math.PI) / (span * (0.45 + rnd() * 0.4)), ph = rnd() * 6.28;
-    const field = (x, y) => {
-      let v = 0.2 * Math.sin(x * fx + ph) * Math.cos(y * fy - ph);
-      for (const k of hills) { const dx = (x - k.x) / k.r, dy = (y - k.y) / k.r; v += k.a * Math.exp(-(dx * dx + dy * dy)); }
-      return v;
-    };
-    const step = opts.step || Math.max(8, span / 100);
-    const nx = Math.ceil(w / step) + 3, ny = Math.ceil(hgt / step) + 3, ox = -step, oy = -step;
-    const g = new Float64Array(nx * ny);
-    let min = Infinity, max = -Infinity;
-    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-      const v = field(ox + i * step, oy + j * step);
-      g[j * nx + i] = v; if (v < min) min = v; if (v > max) max = v;
-    }
-    const levels = opts.levels || 18, out = [];
-    for (let L = 1; L < levels; L++) {
-      const th = min + ((max - min) * L) / levels;
-      const pts = new Map(), adj = new Map();
-      const link = (a, b) => { (adj.get(a) || adj.set(a, []).get(a)).push(b); (adj.get(b) || adj.set(b, []).get(b)).push(a); };
-      const hp = (i, j) => { const id = (j * nx + i) * 2; if (!pts.has(id)) { const a = g[j * nx + i], b = g[j * nx + i + 1]; pts.set(id, [ox + (i + (th - a) / (b - a)) * step, oy + j * step]); } return id; };
-      const vp = (i, j) => { const id = (j * nx + i) * 2 + 1; if (!pts.has(id)) { const a = g[j * nx + i], b = g[(j + 1) * nx + i]; pts.set(id, [ox + i * step, oy + (j + (th - a) / (b - a)) * step]); } return id; };
-      for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
-        const code = (g[j * nx + i] > th ? 8 : 0) | (g[j * nx + i + 1] > th ? 4 : 0) | (g[(j + 1) * nx + i + 1] > th ? 2 : 0) | (g[(j + 1) * nx + i] > th ? 1 : 0);
-        switch (code) {
-          case 1: case 14: link(vp(i, j), hp(i, j + 1)); break;
-          case 2: case 13: link(hp(i, j + 1), vp(i + 1, j)); break;
-          case 3: case 12: link(vp(i, j), vp(i + 1, j)); break;
-          case 4: case 11: link(hp(i, j), vp(i + 1, j)); break;
-          case 5: link(vp(i, j), hp(i, j)); link(hp(i, j + 1), vp(i + 1, j)); break;
-          case 6: case 9: link(hp(i, j), hp(i, j + 1)); break;
-          case 7: case 8: link(vp(i, j), hp(i, j)); break;
-          case 10: link(hp(i, j), vp(i + 1, j)); link(vp(i, j), hp(i, j + 1)); break;
-          default: break;
-        }
-      }
-      const seen = new Set(), lines = [];
-      const walk = (start) => {
-        const ids = [start]; seen.add(start);
-        let prev = -1, cur = start;
-        for (;;) {
-          const nb = (adj.get(cur) || []).find((x) => x !== prev && !seen.has(x));
-          if (nb == null) return { ids, closed: ids.length > 2 && (adj.get(cur) || []).includes(start) };
-          ids.push(nb); seen.add(nb); prev = cur; cur = nb;
-        }
-      };
-      for (const [id, nbs] of adj) if (nbs.length === 1 && !seen.has(id)) lines.push(walk(id));
-      for (const id of adj.keys()) if (!seen.has(id)) lines.push(walk(id));
-      let d = "";
-      for (const ln of lines) {
-        const p = ln.ids.filter((_, k) => k % 2 === 0 || k === ln.ids.length - 1).map((id) => pts.get(id));
-        if (p.length > 2) d += curve(p, ln.closed);
-      }
-      out.push({ d, idx: L % 5 === 0 });
-    }
-    return out;
-  }
-  function curve(p, closed) {
-    const n = p.length, r = (v) => Math.round(v * 10) / 10;
-    const at = (i) => (closed ? p[(i + n) % n] : p[Math.max(0, Math.min(n - 1, i))]);
-    let d = "M" + r(p[0][0]) + " " + r(p[0][1]);
-    for (let i = 0; i < (closed ? n : n - 1); i++) {
-      const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
-      d += "C" + r(p1[0] + (p2[0] - p0[0]) / 6) + " " + r(p1[1] + (p2[1] - p0[1]) / 6) + " " +
-        r(p2[0] - (p3[0] - p1[0]) / 6) + " " + r(p2[1] - (p3[1] - p1[1]) / 6) + " " + r(p2[0]) + " " + r(p2[1]);
-    }
-    return closed ? d + "Z" : d;
-  }
-
-  const TERRAIN = {
-    hero: { seed: 23, levels: 20, hills: 8 },
-    closing: { seed: 5, levels: 16, hills: 6 },
-    auth: { seed: 41, levels: 18, hills: 7 },
-  };
-  function drawTerrain(el, force) {
-    const conf = TERRAIN[el.dataset.terrain] || { seed: Number(el.dataset.seed) || 9, levels: 10, hills: 5 };
-    const box = el.getBoundingClientRect();
-    const w = Math.round(box.width), hgt = Math.round(box.height);
-    if (!w || !hgt) return;
-    const key = w + "x" + hgt;
-    if (!force && el.dataset.drawn === key) return;
-    el.dataset.drawn = key;
-    el.setAttribute("viewBox", `0 0 ${w} ${hgt}`);
-    const g = svg("g", { class: "contours" });
-    for (const c of contours(w, hgt, conf.seed, conf)) if (c.d) g.append(svg("path", { d: c.d, class: c.idx ? "idx" : null }));
-    el.replaceChildren(g);
-    if (el.dataset.terrain === "hero") drawMap(el, w, hgt);
-  }
-  // drawTerrain skips zero-sized (hidden) elements; SVG has no offsetParent.
-  const drawVisibleTerrain = () => $$("[data-terrain]").forEach((el) => drawTerrain(el));
-  window.addEventListener("resize", debounce(drawVisibleTerrain, 180));
-
-  // Nodes of the hero illustration in normalized coordinates, per shape.
-  const MAP = {
-    wide: {
-      nas: [0.15, 0.62, "below"], laptop: [0.47, 0.24, "right"], studio: [0.84, 0.5, "below"], control: [0.55, 0.82, "right"],
-    },
-    tall: {
-      nas: [0.2, 0.38, "below"], laptop: [0.62, 0.15, "left"], studio: [0.8, 0.6, "below"], control: [0.3, 0.8, "right"],
-    },
-  };
-  function drawMap(svgEl, w, hgt) {
-    const layout = w / hgt > 1.25 ? MAP.wide : MAP.tall;
-    const P = (k) => [layout[k][0] * w, layout[k][1] * hgt];
-    const arc = (a, b, bend) => {
-      const [x1, y1] = P(a), [x2, y2] = P(b);
-      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, dx = x2 - x1, dy = y2 - y1;
-      const cx = mx + dy * bend, cy = my - dx * bend;
-      return `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
-    };
-    const links = svg("g", { class: "links" });
-    const direct = arc("nas", "studio", 0.2);
-    links.append(
-      svg("path", { d: arc("control", "nas", 0.08), class: "l-signal" }),
-      svg("path", { d: arc("control", "laptop", -0.06), class: "l-signal" }),
-      svg("path", { d: arc("control", "studio", -0.08), class: "l-signal" }),
-      svg("path", { d: arc("nas", "laptop", 0.12), class: "l-mesh" }),
-      svg("path", { d: arc("laptop", "studio", 0.12), class: "l-mesh" }),
-      svg("path", { d: direct, class: "l-glow" }),
-      svg("path", { d: direct, class: "l-direct" }),
-    );
-    const nodes = svg("g", { class: "nodes" });
-    for (const k of ["nas", "laptop", "studio"]) {
-      const [x, y] = P(k);
-      nodes.append(svg("circle", { cx: x, cy: y, r: 11, class: "n-halo" }), svg("circle", { cx: x, cy: y, r: 9, class: "n-ring" }), svg("circle", { cx: x, cy: y, r: 3.8, class: "n-core" }));
-    }
-    const [cx, cy] = P("control");
-    nodes.append(svg("circle", { cx, cy, r: 10, class: "n-ctrl" }), svg("circle", { cx, cy, r: 3, class: "n-ctrl-core" }));
-    const packets = svg("g", { class: "packets" });
-    if (!reduceMotion.matches) {
-      const pkt = (d, cls, dur, begin, reverse) => {
-        const c = svg("circle", { r: cls === "p-clay" ? 4.2 : 3.2, class: cls, opacity: 0 });
-        const m = svg("animateMotion", { dur, begin, repeatCount: "indefinite", path: d, calcMode: "linear" });
-        if (reverse) { m.setAttribute("keyPoints", "1;0"); m.setAttribute("keyTimes", "0;1"); }
-        const o = svg("animate", { attributeName: "opacity", values: "0;1;1;0", keyTimes: "0;0.08;0.9;1", dur, begin, repeatCount: "indefinite" });
-        c.append(m, o);
-        return c;
-      };
-      packets.append(
-        pkt(direct, "p-clay", "3.4s", "0s"), pkt(direct, "p-clay", "3.4s", "1.13s"), pkt(direct, "p-clay", "3.4s", "2.26s"),
-        pkt(direct, "p-sage", "4.2s", "0.6s", true),
-        pkt(arc("nas", "laptop", 0.12), "p-sage", "3.8s", "1.4s"),
-      );
-    }
-    svgEl.append(links, packets, nodes);
-    for (const lab of $$(".map-label", svgEl.parentNode)) {
-      const spec = layout[lab.dataset.node];
-      if (!spec) continue;
-      lab.style.left = spec[0] * 100 + "%";
-      lab.style.top = spec[1] * 100 + "%";
-      lab.classList.remove("left", "below", "above");
-      if (spec[2] !== "right") lab.classList.add(spec[2]);
-    }
+  // Shared chrome is used in the portal, auth/setup and Mesh console.
+  // Language changes remain local; Mesh has no kit PATCH /me locale contract.
+  function mountSharedChrome() {
+    for (const host of $$("[data-lang-picker]"))
+      host.replaceWith(K.chrome.langPicker({ up: "up" in host.dataset }));
+    for (const b of $$("[data-theme-toggle]")) b.replaceWith(K.chrome.themeToggle());
+    for (const tools of $$(".nav-tools,.auth-tools,.app-tools"))
+      tools.prepend(K.chrome.projectMenu({ current: () => Surface.isPlatform ? "mineai" : "mb" }));
   }
 
   // ───────────────────────── views ─────────────────────────
-  const VIEWS = ["landing", "auth", "app"];
-  let currentView = null;
+  const VIEWS = ["landing", "auth", "app", "service"];
+  let currentView = null, currentPanel = null;
   function showView(name) {
     if (currentView !== name) {
+      if (name !== "app") { clearTimeout(pollTimer); pageGeneration++; }
+      if (currentView === "auth") Google.leave(); // One Tap must not float over another view
       for (const v of VIEWS) $("#view-" + v).hidden = v !== name;
       currentView = name;
       window.scrollTo(0, 0);
@@ -556,8 +312,42 @@
     requestAnimationFrame(drawVisibleTerrain);
     document.body.classList.add("ready");
   }
+  // One place decides the tab title, so a language switch can never leave a
+  // title from another product or another view behind.
+  function renderTitle() {
+    if (currentView === "landing") document.title = t("portal.pageTitle");
+    else if (currentView === "auth") {
+      const el = $(`[data-panel="${currentPanel}"] .auth-title`);
+      document.title = [el ? el.textContent : "", Surface.name].filter(Boolean).join(" · ");
+    } else if (currentView === "app" && App.page) setPageTitle();
+    else if (currentView === "service") document.title = [t("service.title"), Surface.name].filter(Boolean).join(" · ");
+  }
 
-  // ── landing
+  // The surface decides copy, brand and the way back to the platform. Applied
+  // once the server has answered, before anything is routed.
+  function applySurface() {
+    document.documentElement.dataset.surface = Surface.kind;
+    for (const el of $$("[data-surface-brand]")) el.textContent = Surface.name;
+    for (const el of $$("[data-i18n-platform]")) el.dataset.i18n = Surface.isPlatform ? el.dataset.i18nPlatform : el.dataset.i18nProject;
+    const back = Surface.split && !Surface.isPlatform && Surface.platformURL;
+    for (const a of $$("[data-platform-home]")) { a.hidden = !back; if (back) a.href = Surface.platformURL + "/"; }
+    for (const a of $$("[data-project-link='mb']")) if (Surface.projectURL) a.href = Surface.projectURL + "/";
+    // The footer of the sign-in pages: home on the platform, the platform from
+    // the project, nothing on a standalone install.
+    const foot = $("#auth-foot-link");
+    foot.hidden = !Surface.isPlatform && !back;
+    foot.href = Surface.isPlatform ? "#/" : back ? Surface.platformURL + "/" : "#/";
+    foot.dataset.i18n = Surface.isPlatform ? "common.backHome" : "mb.backToPlatform";
+    I18N.apply(document);
+    describeSite();
+  }
+  // The search-engine description names the product of this origin.
+  function describeSite() {
+    const desc = $('meta[name="description"]');
+    if (desc) desc.setAttribute("content", t(Surface.isPlatform ? "portal.lede" : "meta.description"));
+  }
+
+  // ── platform landing: project navigation and the platform account only
   let landingReady = false;
   function initLanding() {
     if (landingReady) return;
@@ -569,58 +359,84 @@
     for (const a of $$("[data-scroll]")) {
       a.addEventListener("click", (e) => { e.preventDefault(); scrollToSection(a.dataset.scroll); });
     }
-    for (const group of [".facts", ".cards", ".steps"]) {
-      $$(group + " > .reveal").forEach((el, i) => el.style.setProperty("--d", i * 90 + "ms"));
-    }
-    const io = "IntersectionObserver" in window
-      ? new IntersectionObserver((entries) => {
-        for (const en of entries) if (en.isIntersecting) { en.target.classList.add("is-in"); io.unobserve(en.target); }
-      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 })
-      : null;
-    $$("#view-landing .reveal").forEach((el) => (io ? io.observe(el) : el.classList.add("is-in")));
   }
   function scrollToSection(id) {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: reduceMotion.matches ? "auto" : "smooth", block: "start" });
   }
+  async function platformSignOut() {
+    try { await api("POST", "/api/v1/auth/logout", {}, { quiet401: true }); }
+    catch (err) { if (err.status !== 401) { toast(errText(err), "err"); return; } }
+    Google.signedOut();
+    Session.clear(); Resume.set("");
+    void renderAccount();
+  }
+  // Sign in, or who is signed in with a way out. A fault shows neither: the
+  // visitor is not told they are signed out when the server merely stumbled.
+  async function renderAccount() {
+    const host = $("#acct");
+    const token = Session.token(), epoch = Session.epoch;
+    let me = null, fault = false;
+    if (token) {
+      try { me = await Session.me(); }
+      catch (e) { if (K.isQueryCancelled(e)) return; fault = true; }
+    }
+    if (currentView !== "landing" || Session.token() !== token || Session.epoch !== epoch) return;
+    if (me) {
+      const out = h("button", { class: "icon-btn", type: "button", "data-i18n-attr": "aria-label:common.signOut;title:common.signOut" }, icon("logout"));
+      out.addEventListener("click", platformSignOut);
+      host.replaceChildren(
+        h("span", { class: "acct-chip", title: me.username }, h("span", { class: "avatar sm" }, (me.username || "?").slice(0, 1)), h("span", { class: "acct-name" }, me.username)),
+        out);
+      I18N.apply(host);
+    } else if (fault) {
+      const retry = h("button", { class: "btn btn-quiet btn-sm", type: "button" }, icon("refresh"), h("span", { i18n: "common.retry" }));
+      retry.addEventListener("click", () => { Session._me = undefined; void renderAccount(); });
+      host.replaceChildren(retry);
+    } else {
+      host.replaceChildren(h("a", { class: "btn btn-outline btn-sm", href: "#/login" }, icon("user"), h("span", { class: "acct-label", i18n: "common.signIn" })));
+    }
+  }
   function applyRegistrationGate(st) {
     const open = !st || st.allow_registration !== false;
-    for (const a of $$("[data-cta='register']")) {
-      a.setAttribute("href", open ? "#/register" : "#/login");
-      const label = a.dataset.i18n ? a : $("[data-i18n]", a);
-      if (!label.dataset.i18nOpen) label.dataset.i18nOpen = label.dataset.i18n;
-      label.dataset.i18n = open ? label.dataset.i18nOpen : "common.signIn";
-      setRich(label, t(label.dataset.i18n));
-    }
     $$("[data-reg-link]").forEach((el) => (el.hidden = !open));
   }
   async function showLanding(anchor) {
     initLanding();
     showView("landing");
-    document.title = t("meta.title");
-    applyRegistrationGate(await Status.get());
+    currentPanel = null;
+    renderTitle();
+    void renderAccount();
     if (anchor) setTimeout(() => scrollToSection(anchor), 60);
+  }
+
+  // ── a server that cannot answer: retryable, and never a sign-out
+  function showFault(error) {
+    showView("service");
+    currentPanel = null;
+    K.tl($("#service-text"), error && (error.status === 0 || error.code === "network") ? "service.textNetwork" : "service.text");
+    renderTitle();
   }
 
   // ── auth panels
   const ART = {
-    auth: ["auth.panelTitle", "auth.panelP1", "auth.panelP2", "auth.panelP3"],
-    setup: ["setup.panelTitle", "setup.panelP1", "setup.panelP2", "setup.panelP3"],
+    platform: { kicker: "art.kickerPlatform", title: "auth.panelTitle", p: ["auth.panelP1", "auth.panelP2", "auth.panelP3"] },
+    project: { kicker: "art.kickerProject", title: "mb.art.title", p: ["mb.art.p1", "mb.art.p2", "mb.art.p3"] },
+    setup: { kicker: "art.kickerProject", title: "setup.panelTitle", p: ["setup.panelP1", "setup.panelP2", "setup.panelP3"] },
   };
-  let currentPanel = null;
   function setArt(kind) {
-    const keys = ART[kind];
-    const [title, p1, p2, p3] = ["title", "p1", "p2", "p3"].map((k) => $(`[data-art="${k}"]`));
-    [title, p1, p2, p3].forEach((el, i) => { el.dataset.i18n = keys[i]; setRich(el, t(keys[i])); });
+    const art = ART[kind];
+    ["kicker", "title", "p1", "p2", "p3"].forEach((slot, i) => K.tl($(`[data-art="${slot}"]`), [art.kicker, art.title, ...art.p][i]));
   }
   async function showAuth(panel) {
     const st = await Status.get();
     showView("auth");
     for (const sec of $$("[data-panel]")) sec.hidden = sec.dataset.panel !== panel;
-    setArt(panel === "setup" ? "setup" : "auth");
+    setArt(panel === "setup" ? "setup" : Surface.isPlatform ? "platform" : "project");
     currentPanel = panel;
     const sec = $(`[data-panel="${panel}"]`);
-    document.title = $(".auth-title", sec).textContent + " · MeshBridge";
+    renderTitle();
+    if (panel !== "login") { altSeq++; Google.leave(); }
     if (panel === "register") {
       const closed = st && st.allow_registration === false;
       $('[data-role="closed"]', sec).hidden = !closed;
@@ -631,6 +447,8 @@
       const note = $('[data-role="notice"]', sec);
       if (flash && flash.panel === "login") { $('[data-role="notice-text"]', note).textContent = flash.text; note.hidden = false; flash = null; }
       else note.hidden = true;
+      showErr($("#form-login"), "");
+      void mountAltAuth();
     }
     if (panel === "setup") setupGoto(setupStep);
     const first = $("input:not([disabled])", sec);
@@ -722,7 +540,7 @@
           const d = await api("POST", "/api/v1/auth/login", { username, password }, { auth: false });
           Session.set(d.token);
           f.reset();
-          go("#/app/overview");
+          go(afterSignIn());
         } catch (err) { showErr(f, errText(err, "login")); }
       });
     });
@@ -740,7 +558,7 @@
           Session.set(d.token);
           f.reset();
           toast(t("auth.register.success"));
-          go("#/app/overview");
+          go(afterSignIn());
         } catch (err) { showErr(f, errText(err)); }
       });
     });
@@ -912,7 +730,7 @@
 
   // ───────────────────────── enrollment component ─────────────────────────
   function enrollLines(os, r) {
-    const origin = location.origin, key = r.preauth_key || "<PREAUTH_KEY>";
+    const origin = Surface.serviceOrigin, key = r.preauth_key || "<PREAUTH_KEY>";
     const tok = r.agent_token, id = r.device_id, host = r.hostname;
     const dl = origin + "/dl";
     const c = (n, k) => ["c", `# ${n}) ${t(k)}`];
@@ -964,7 +782,7 @@
     const f = $("form", host), out = $('[data-role="out"]', host), btn = $("[type=submit]", f);
     let result = null, os = /Win/.test(navigator.platform) ? "windows" : /Mac/.test(navigator.platform) ? "macos" : "linux";
     const pre = $('[data-role="cmd"]', host);
-    const copyCmd = h("button", { class: "copy-btn", type: "button" }, icon("copy"), h("span", { i18n: "common.copy" }, t("common.copy")));
+    const copyCmd = h("button", { class: "copy-btn", type: "button" }, icon("copy"), h("span", { i18n: "common.copy" }));
     const render = () => {
       if (!result) return;
       $('[data-role="reg"]', out).textContent = t("enroll.registered", { name: result.hostname });
@@ -1002,7 +820,10 @@
       });
     });
     on("lang", render);
-    const ctl = { reset() { result = null; out.hidden = true; f.reset(); showErr(f, ""); }, focus() { f.host.focus(); } };
+    const ctl = { reset() {
+      result = null; out.hidden = true; f.reset(); showErr(f, "");
+      for (const role of ["token", "preauth", "cmd", "id", "reg"]) $('[data-role="' + role + '"]', host).textContent = "";
+    }, focus() { f.host.focus(); } };
     enrollers.push(ctl);
     return ctl;
   }
@@ -1092,12 +913,12 @@
           });
           const tun = d.tunnel;
           const pathEl = $('[data-role="url-path"]', out);
-          pathEl.href = location.origin + tun.url_path;
-          pathEl.textContent = location.origin + tun.url_path;
+          pathEl.href = Surface.serviceOrigin + tun.url_path;
+          pathEl.textContent = Surface.serviceOrigin + tun.url_path;
           const subEl = $('[data-role="url-sub"]', out);
           const subBlock = $('[data-role="sub-block"]', out);
           if (tun.url_subdomain) {
-            const sub = location.protocol + "//" + tun.url_subdomain + (location.port ? ":" + location.port : "");
+            const sub = Surface.tunnelHost(tun.url_subdomain);
             subBlock.hidden = false;
             subEl.href = sub;
             subEl.textContent = sub;
@@ -1121,33 +942,93 @@
   }
 
   // ───────────────────────── console data ─────────────────────────
-  const D = { devices: null, transfers: null, tunnels: null, relays: null, audit: [], auditPage: 0, auditDone: false, health: null, healthErr: false, projects: null, smtp: null, pendingKey: null };
+  const freshData = () => ({ devices: null, transfers: null, tunnels: null, relays: null, audit: [], auditPage: 0, auditDone: false, health: null, healthErr: false, projects: null, smtp: null, pendingKey: null });
+  const D = freshData(), dataVersions = {}, dataErrors = {}, renderKeys = new Map();
+  let auditPending = null, auditGeneration = 0, pageGeneration = 0;
+  function resetConsoleData() {
+    Object.assign(D, freshData());
+    for (const key of Object.keys(dataVersions)) delete dataVersions[key];
+    for (const key of Object.keys(dataErrors)) delete dataErrors[key];
+    renderKeys.clear(); auditPending = null; auditGeneration++; pageGeneration++;
+    clearTimeout(pollTimer);
+    App.me = null; App.page = null; App.filters = { dev: "all", tr: "all" };
+    for (const form of $$("form", $("#view-app"))) form.reset();
+    if (currentView === "app") { $("#view-app").hidden = true; currentView = null; }
+    for (const selector of [...Object.values(LIST_HOSTS), "#ov-transfers", "#ov-activity"]) $(selector).replaceChildren();
+    for (const selector of ["#dev-q", "#audit-q"]) $(selector).value = "";
+    for (const button of $$("#dev-filter button,#tr-filter button")) button.setAttribute("aria-pressed", String(button.dataset.f === "all"));
+    for (const enroller of enrollers) enroller.reset();
+    for (const modal of $$(".modal")) {
+      modal.hidden = true;
+      for (const form of $$("form", modal)) form.reset();
+      for (const secret of $$('[data-role="key"]', modal)) secret.textContent = "";
+    }
+    document.body.classList.remove("modal-open"); modalReturn = null;
+  }
+  function assignData(key, value) {
+    if (JSON.stringify(D[key]) !== JSON.stringify(value)) {
+      D[key] = value; dataVersions[key] = (dataVersions[key] || 0) + 1;
+    }
+    return D[key];
+  }
+  function shouldPaint(key, values) {
+    const signature = JSON.stringify([I18N.lang, ...values]);
+    if (renderKeys.get(key) === signature) return false;
+    renderKeys.set(key, signature); return true;
+  }
+  async function readQuery(key, path, ttl, force = false, auth = true, commit = (data) => data) {
+    Session.token();
+    const epoch = Session.epoch;
+    const data = await Queries.get(key, (signal) => api("GET", path, null, { signal, auth }), { ttl, force });
+    Session.token();
+    if (Session.epoch !== epoch || Queries.peek(key) !== data) throw cancelledQuery();
+    // Commit in this same turn: even the microtask gap between two awaits
+    // could otherwise let a just-resolved old response cross an account switch.
+    return commit(data);
+  }
   const ACTIVE = new Set(["QUEUED", "PROBING", "WAITING_FOR_ROUTE", "TRANSFERRING", "PAUSED", "VERIFYING"]);
   const load = {
-    async devices() { D.devices = (await api("GET", "/api/v1/devices?limit=200")).items || []; updateCounts(); return D.devices; },
-    async transfers() { D.transfers = (await api("GET", "/api/v1/transfers?limit=200")).items || []; updateCounts(); return D.transfers; },
-    async tunnels() { D.tunnels = (await api("GET", "/api/v1/tunnels")).items || []; return D.tunnels; },
-    async relays() { D.relays = (await api("GET", "/api/v1/relays")).items || []; return D.relays; },
-    async projects() { D.projects = (await api("GET", "/api/v1/projects?limit=200")).items || []; return D.projects; },
+    devices(force) { return readQuery("devices", "/api/v1/devices?limit=200", 15000, force, true, (data) => { assignData("devices", data.items || []); updateCounts(); return D.devices; }); },
+    transfers(force) { return readQuery("transfers", "/api/v1/transfers?limit=200", 5000, force, true, (data) => { assignData("transfers", data.items || []); updateCounts(); return D.transfers; }); },
+    tunnels(force) { return readQuery("tunnels", "/api/v1/tunnels", 30000, force, true, (data) => assignData("tunnels", data.items || [])); },
+    relays(force) { return readQuery("relays", "/api/v1/relays", 30000, force, true, (data) => assignData("relays", data.items || [])); },
+    projects(force) { return readQuery("projects", "/api/v1/projects?limit=200", 30000, force, true, (data) => assignData("projects", data.items || [])); },
     async health() {
-      try { D.health = await api("GET", "/api/v1/health", null, { auth: false }); D.healthErr = false; }
-      catch { D.healthErr = true; }
-      renderHealth();
+      Session.token(); const epoch = Session.epoch;
+      try { await readQuery("health", "/api/v1/health", 15000, false, false, (data) => { assignData("health", data); D.healthErr = false; renderHealth(); }); }
+      catch (err) { if (K.isQueryCancelled(err) || Session.epoch !== epoch) throw cancelledQuery(); D.healthErr = true; renderHealth(); }
     },
-    async audit(reset) {
-      if (reset) { D.audit = []; D.auditPage = 0; D.auditDone = false; }
-      const page = D.auditPage + 1, limit = 50;
-      const items = (await api("GET", `/api/v1/audit?limit=${limit}&page=${page}`)).items || [];
-      D.audit = D.audit.concat(items); D.auditPage = page; D.auditDone = items.length < limit;
-      return D.audit;
+    async audit(reset = false, force = false) {
+      Session.token();
+      if (auditPending && (!reset || auditPending.reset)) return auditPending.promise;
+      if (!reset && D.auditDone) return D.audit;
+      if (reset && auditPending) Queries.invalidate((key) => key.startsWith("audit:"));
+      const generation = ++auditGeneration, epoch = Session.epoch;
+      const page = reset ? 1 : D.auditPage + 1, limit = 50;
+      const pending = { reset };
+      pending.promise = readQuery("audit:" + page, `/api/v1/audit?limit=${limit}&page=${page}`, 15000, force, true, (data) => {
+        const items = data.items || [];
+        if (epoch !== Session.epoch || generation !== auditGeneration) throw cancelledQuery();
+        // A no-change poll keeps expanded pages, instead of collapsing the
+        // reader back to page one. Failed refreshes also keep the old list.
+        if (reset && D.auditPage > 1 && JSON.stringify(D.audit.slice(0, limit)) === JSON.stringify(items)) return D.audit;
+        assignData("audit", reset ? items : D.audit.concat(items));
+        D.auditPage = page; D.auditDone = items.length < limit;
+        if (reset) Queries.invalidate((key) => key.startsWith("audit:") && key !== "audit:1");
+        return D.audit;
+      });
+      auditPending = pending;
+      try { return await pending.promise; }
+      finally { if (auditPending === pending) auditPending = null; }
     },
-    async smtp() { D.smtp = await api("GET", "/api/v1/setup/smtp"); return D.smtp; },
+    smtp(force) { return readQuery("smtp", "/api/v1/setup/smtp", 15000, force, true, (data) => assignData("smtp", data)); },
   };
   const hostOf = (id) => { const d = (D.devices || []).find((x) => x.id === id); return d ? d.hostname : short(id); };
   function updateCounts() {
     const dc = $('[data-count="devices"]'), tc = $('[data-count="transfers"]');
-    if (D.devices) dc.textContent = D.devices.length ? fmt.num(D.devices.length) : "";
-    if (D.transfers) { const n = D.transfers.filter((x) => ACTIVE.has(x.state)).length; tc.textContent = n ? fmt.num(n) : ""; }
+    dc.textContent = D.devices && D.devices.length ? fmt.num(D.devices.length) : "";
+    const n = (D.transfers || []).filter((x) => ACTIVE.has(x.state)).length;
+    tc.textContent = n ? fmt.num(n) : "";
   }
   function renderHealth() {
     const box = $("#health"), txt = $('[data-role="text"]', box);
@@ -1183,41 +1064,30 @@
       h("span", null, total ? fmt.pct(ratio) : ""));
     return h("div", { class: "prog" }, bar, meta);
   }
-  function inlineCopy(text, labelKey) {
-    const b = h("button", { class: "inline-copy", type: "button", "aria-label": t(labelKey), title: t(labelKey) }, icon("copy"));
-    b.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      await clip(text);
-      b.classList.add("is-done"); b.replaceChildren(icon("check"));
-      setTimeout(() => { b.classList.remove("is-done"); b.replaceChildren(icon("copy")); }, 1400);
-    });
-    return b;
-  }
-  function emptyState({ icon: ic, title, text, action, seed }) {
-    const art = h("div", { class: "empty-art" });
-    const ter = svg("svg", { class: "terrain-svg", "data-seed": String(seed || 7), preserveAspectRatio: "none", "aria-hidden": "true" });
-    art.append(ter, icon(ic));
-    const box = h("div", { class: "empty" }, art, h("h3", { class: "display empty-title" }, title), h("p", { class: "empty-text" }, text), action || null);
-    requestAnimationFrame(() => drawTerrain(ter, true));
-    return box;
-  }
-  function table(cols, rows) {
-    const thead = h("thead", null, h("tr", null, cols.map((c) => h("th", { scope: "col", class: c.cls || null }, c.label))));
-    const tbody = h("tbody");
-    for (const r of rows) {
-      tbody.append(h("tr", null, r.map((cell, i) => {
-        const td = h("td", { class: [cols[i].cls, i === 0 ? "cell-main" : null].filter(Boolean).join(" ") || null, "data-label": cols[i].label });
-        td.append(...(Array.isArray(cell) ? cell : [cell]).filter((x) => x != null));
-        return td;
-      })));
-    }
-    return h("table", { class: "data" }, thead, tbody);
-  }
-  const loadingRows = (n) => h("div", null, Array.from({ length: n }, () => h("div", { class: "skeleton" })));
-
   // ───────────────────────── console pages ─────────────────────────
   const App = { page: null, me: null, filters: { dev: "all", tr: "all" } };
   const isAdmin = () => App.me && App.me.role === "admin";
+  const LIST_HOSTS = { devices: "#dev-table", transfers: "#tr-table", tunnels: "#tu-table", relays: "#relay-list", audit: "#audit-table" };
+  const hasPageData = (name) => name === "audit" ? D.auditPage > 0 : D[name] !== null;
+  const pageCurrent = (name, generation, epoch) => currentView === "app" && App.page === name && pageGeneration === generation && Session.epoch === epoch;
+  async function refreshList(name, keys, quiet = false, force = false) {
+    const generation = pageGeneration, epoch = Session.epoch;
+    const current = () => pageCurrent(name, generation, epoch);
+    // Paint a previously loaded list synchronously, before any network wait.
+    if (current()) PAGES[name].render();
+    await Promise.allSettled(keys.map(async (key) => {
+      try {
+        await (key === "audit" ? load.audit(true, force) : load[key](key === name && force));
+        if (Session.epoch !== epoch) return;
+        delete dataErrors[key];
+      } catch (err) {
+        if (K.isQueryCancelled(err) || !current()) return;
+        dataErrors[key] = errText(err);
+        if (!quiet && hasPageData(name)) toast(dataErrors[key], "err");
+      }
+      if (current()) PAGES[name].render();
+    }));
+  }
 
   const PAGES = {
     overview: {
@@ -1226,11 +1096,18 @@
         const k = hr >= 5 && hr < 12 ? "titleMorning" : hr >= 12 && hr < 18 ? "titleAfternoon" : "titleEvening";
         return t("app.overview." + k, { name: App.me ? App.me.username : "" });
       },
-      async refresh() {
-        const jobs = [load.health(), load.devices(), load.transfers(), load.relays(), load.audit(true)];
-        if (isAdmin()) jobs.push(load.smtp().catch(() => null));
-        await Promise.allSettled(jobs);
-        this.render();
+      async refresh(quiet = false, force = false) {
+        const generation = pageGeneration, epoch = Session.epoch;
+        const current = () => pageCurrent("overview", generation, epoch);
+        if (current()) this.render();
+        const keys = ["health", "devices", "transfers", "relays", "audit"];
+        if (isAdmin()) keys.push("smtp");
+        await Promise.allSettled(keys.map(async (key) => {
+          try { await (key === "audit" ? load.audit(true, force) : load[key](force)); if (Session.epoch !== epoch) return; delete dataErrors[key]; }
+          catch (err) { if (K.isQueryCancelled(err) || !current()) return; dataErrors[key] = errText(err); }
+          // Each module can update while unrelated slow requests are pending.
+          if (current()) this.render();
+        }));
       },
       render() {
         const devs = D.devices || [], trs = D.transfers || [], rel = D.relays || [];
@@ -1244,21 +1121,26 @@
           $('[data-role="n"]', el).textContent = note;
         };
         if (D.devices) stat("st-devices", fmt.num(online), devs.length ? fmt.num(devs.length) : "", devs.length ? t("app.overview.devicesNote", { n: devs.length, count: fmt.num(devs.length) }) : t("app.overview.noDevices"));
+        else stat("st-devices", "—", "", dataErrors.devices || t("common.loading"));
         if (D.transfers) { const act = trs.filter((x) => ACTIVE.has(x.state)).length; stat("st-transfers", fmt.num(act), "", t("app.overview.transfersNote", { n: trs.length, count: fmt.num(trs.length) })); }
+        else stat("st-transfers", "—", "", dataErrors.transfers || t("common.loading"));
         if (D.relays) {
           const ok = rel.filter((r) => r.healthy).length;
           if (rel.length) stat("st-relays", fmt.num(ok), fmt.num(rel.length), t("app.overview.relaysNote"));
           else stat("st-relays", "—", "", t("app.overview.relaysNone"));
         }
+        else stat("st-relays", "—", "", dataErrors.relays || t("common.loading"));
         if (D.healthErr) stat("st-control", t("app.overview.controlDown"), "", t("app.health.offline"), "bad");
         else if (D.health) {
           const ok = D.health.headscale === "ok";
           stat("st-control", t(ok ? "app.overview.controlOk" : "app.overview.controlBad"), "", t(ok ? "app.health.hsOk" : "app.health.hsDown"), ok ? "ok" : "bad");
         }
+        else stat("st-control", "—", "", t("app.health.checking"));
         // recent transfers
+        if (shouldPaint("ov-transfers", [dataVersions.transfers, dataVersions.devices, dataErrors.transfers])) {
         const tl = $("#ov-transfers");
         tl.replaceChildren();
-        if (!trs.length) tl.append(h("li", { class: "list-empty" }, t("app.overview.noTransfers")));
+        if (!trs.length) tl.append(h("li", { class: "list-empty" }, D.transfers ? t("app.overview.noTransfers") : dataErrors.transfers || t("common.loading")));
         for (const x of trs.slice(0, 5)) {
           const ratio = x.bytes_total ? Math.min(1, x.bytes_done / x.bytes_total) : x.state === "COMPLETED" ? 1 : 0;
           const tone = x.state === "FAILED" ? "clay" : x.state === "COMPLETED" ? "moss" : "slate";
@@ -1268,16 +1150,19 @@
               h("div", { class: "li-sub" }, t("state." + x.state) + " · " + routeLabel(x.route))),
             h("span", { class: "li-end" }, x.bytes_total ? fmt.pct(ratio) : "")));
         }
+        }
         // activity
+        if (shouldPaint("ov-activity", [dataVersions.audit, D.auditPage, dataErrors.audit, Math.floor(Date.now() / 60000)])) {
         const al = $("#ov-activity");
         al.replaceChildren();
-        if (!D.audit.length) al.append(h("li", { class: "list-empty" }, t("app.overview.noActivity")));
+        if (!D.audit.length) al.append(h("li", { class: "list-empty" }, D.auditPage ? t("app.overview.noActivity") : dataErrors.audit || t("common.loading")));
         for (const a of D.audit.slice(0, 6)) {
           const ev = eventInfo(a.event);
           al.append(h("li", null,
             h("span", { class: "feed-dot " + ev.tone }, icon(ev.icon)),
             h("div", { class: "li-main" }, h("div", { class: "li-title" }, ev.label), h("div", { class: "li-sub" }, [a.actor, eventDetail(a)].filter(Boolean).join(" · "))),
             h("span", { class: "li-end", title: fmt.abs(a.ts) }, fmt.rel(a.ts))));
+        }
         }
         // getting started (admins only)
         const cl = $("#checklist");
@@ -1295,12 +1180,7 @@
     },
 
     devices: {
-      async refresh(quiet) {
-        const host = $("#dev-table");
-        if (!quiet && !D.devices) host.replaceChildren(loadingRows(4));
-        try { await load.devices(); } catch (e) { if (!quiet) toast(errText(e), "err"); }
-        this.render();
-      },
+      refresh(quiet, force) { return refreshList("devices", ["devices"], quiet, force); },
       render() {
         const host = $("#dev-table");
         const all = D.devices || [];
@@ -1328,12 +1208,7 @@
 
     transfers: {
       interval() { return (D.transfers || []).some((x) => ACTIVE.has(x.state)) ? 5000 : 15000; },
-      async refresh(quiet) {
-        const host = $("#tr-table");
-        if (!quiet && !D.transfers) host.replaceChildren(loadingRows(4));
-        try { await Promise.all([load.transfers(), D.devices ? null : load.devices()]); } catch (e) { if (!quiet) toast(errText(e), "err"); }
-        this.render();
-      },
+      refresh(quiet, force) { return refreshList("transfers", ["transfers", "devices"], quiet, force); },
       render() {
         const host = $("#tr-table");
         const all = D.transfers || [];
@@ -1362,12 +1237,7 @@
 
     tunnels: {
       interval: () => 30000,
-      async refresh(quiet) {
-        const host = $("#tu-table");
-        if (!quiet && !D.tunnels) host.replaceChildren(loadingRows(3));
-        try { await Promise.all([load.tunnels(), D.devices ? null : load.devices()]); } catch (e) { if (!quiet) toast(errText(e), "err"); }
-        this.render();
-      },
+      refresh(quiet, force) { return refreshList("tunnels", ["tunnels", "devices"], quiet, force); },
       render() {
         const host = $("#tu-table"), all = D.tunnels || [];
         host.replaceChildren();
@@ -1397,7 +1267,7 @@
             const ratio = x.monthly_quota_bytes ? Math.min(1, x.bytes_in_month / x.monthly_quota_bytes) : 0;
             const bar = h("div", { class: "progress" + (ratio > 0.95 ? " err" : ratio > 0.8 ? " warn" : "") }, h("i"));
             bar.firstChild.style.setProperty("--p", (ratio * 100).toFixed(1) + "%");
-            const url = location.origin + x.url_path;
+            const url = Surface.serviceOrigin + x.url_path;
             const toggle = h("button", { class: "btn btn-outline btn-xs", type: "button" }, t(x.status === "disabled" ? "app.tunnels.actionEnable" : "app.tunnels.actionDisable"));
             toggle.addEventListener("click", () => busy(toggle, async () => {
               try {
@@ -1425,7 +1295,7 @@
             return [
               [h("div", { class: "primary" }, x.name || t("app.tunnels.unnamed")), h("div", { class: "sub" }, h("span", { class: "tag-mono" }, x.device_hostname || short(x.device_id)), " · ", h("span", { class: "mono" }, x.target))],
               [h("a", { class: "mono link", href: url, target: "_blank", rel: "noopener" }, x.url_path), inlineCopy(url, "app.tunnels.copyUrl"),
-                x.url_subdomain ? h("div", { class: "sub" }, h("a", { class: "mono link", href: location.protocol + "//" + x.url_subdomain + (location.port ? ":" + location.port : ""), target: "_blank", rel: "noopener" }, location.protocol + "//" + x.url_subdomain)) : null],
+                x.url_subdomain ? h("div", { class: "sub" }, h("a", { class: "mono link", href: Surface.tunnelHost(x.url_subdomain), target: "_blank", rel: "noopener" }, Surface.tunnelHost(x.url_subdomain))) : null],
               [tunnelPill(x), x.key_required ? h("div", { class: "sub" }, icon("key"), " ", t("app.tunnels.keyOn")) : h("div", { class: "sub" }, t("app.tunnels.keyOff"))],
               h("div", { class: "prog" }, bar, h("div", { class: "prog-meta" }, h("span", null, t("app.tunnels.usageOf", { used: fmt.bytes(x.bytes_in_month), quota: fmt.bytes(x.monthly_quota_bytes) })))),
               h("div", { class: "row-actions" }, toggle, rotate, del),
@@ -1436,12 +1306,7 @@
 
     relays: {
       interval: () => 30000,
-      async refresh(quiet) {
-        const host = $("#relay-list");
-        if (!quiet && !D.relays) host.replaceChildren(loadingRows(3));
-        try { await load.relays(); } catch (e) { if (!quiet) toast(errText(e), "err"); }
-        this.render();
-      },
+      refresh(quiet, force) { return refreshList("relays", ["relays"], quiet, force); },
       render() {
         const host = $("#relay-list"), rel = D.relays || [];
         if (!rel.length) {
@@ -1464,12 +1329,7 @@
 
     audit: {
       interval: () => 60000,
-      async refresh(quiet) {
-        const host = $("#audit-table");
-        if (!quiet && !D.audit.length) host.replaceChildren(loadingRows(6));
-        try { await load.audit(true); } catch (e) { if (!quiet) toast(errText(e), "err"); }
-        this.render();
-      },
+      refresh(quiet, force) { return refreshList("audit", ["audit"], quiet, force); },
       render() {
         const host = $("#audit-table");
         $("#audit-more-row").hidden = D.auditDone || !D.audit.length;
@@ -1498,14 +1358,18 @@
     settings: {
       interval: () => 0,
       async refresh() {
+        const generation = pageGeneration, epoch = Session.epoch;
         this.render();
+        void loadGoogleLink(generation, epoch);
         if (!isAdmin()) return;
+        void loadGoogleSettings(generation, epoch);
         if (!this.smtp) this.smtp = mountSmtp($('[data-mount="smtp-settings"]'), "settings");
         const [smtp, st, tun] = await Promise.all([
           load.smtp().catch(() => null),
           Status.get(true),
-          api("GET", "/api/v1/tunnels/settings").catch(() => null),
+          readQuery("tunnel-settings", "/api/v1/tunnels/settings", 30000).catch(() => null),
         ]);
+        if (!pageCurrent("settings", generation, epoch)) return;
         if (smtp) this.smtp.fill(smtp);
         setSmtpPill(smtp && smtp.configured);
         if (st) $("#set-reg").setAttribute("aria-checked", String(!!st.allow_registration));
@@ -1520,6 +1384,8 @@
         $("#acc-name").textContent = me.username || "—";
         $("#acc-email").textContent = me.email || "—";
         $("#acc-role").textContent = me.role === "admin" ? t("common.admin") : t("common.member");
+        $("#logout-platform").hidden = !me.sso;
+        renderGoogleSettings();
         const sel = $("#set-lang");
         if (!sel.options.length) for (const l of LANGS) sel.append(h("option", { value: l.code, lang: l.code }, l.name));
         sel.value = I18N.lang;
@@ -1527,12 +1393,34 @@
       },
     },
   };
+  // Keep table nodes (and their focus/selection) when a refresh contains no
+  // changes. Locale, filters, dependency changes and relative-time ticks still
+  // repaint. Initial errors stay distinguishable from genuinely empty lists.
+  for (const [name, selector] of Object.entries(LIST_HOSTS)) {
+    const page = PAGES[name], render = page.render;
+    const deps = name === "transfers" || name === "tunnels" ? [name, "devices"] : [name];
+    page.render = function () {
+      const query = name === "devices" ? $("#dev-q").value : name === "audit" ? $("#audit-q").value : "";
+      if (!shouldPaint(name, [deps.map((key) => dataVersions[key]), dataErrors[name], hasPageData(name),
+        App.me && App.me.role, App.filters, query, D.pendingKey && D.pendingKey.key,
+        name === "audit" ? [D.auditPage, D.auditDone] : null, Math.floor(Date.now() / 60000)])) return;
+      const host = $(selector);
+      if (!hasPageData(name)) {
+        if (!dataErrors[name]) { host.replaceChildren(loadingRows(name === "audit" ? 6 : 4)); return; }
+        const retry = h("button", { class: "btn btn-outline", type: "button" }, t("common.retry"));
+        retry.addEventListener("click", () => busy(retry, () => page.refresh(false, true)));
+        host.replaceChildren(emptyState({ icon: "alert", title: dataErrors[name], action: retry }));
+        return;
+      }
+      render.call(this);
+    };
+  }
   function setSmtpPill(on_) {
     const p = $("#smtp-status");
     p.className = "pill " + (on_ ? "ok" : "warn");
-    p.replaceChildren(h("span", { class: "dot" }), h("span", { i18n: on_ ? "smtp.statusOn" : "smtp.statusOff" }, t(on_ ? "smtp.statusOn" : "smtp.statusOff")));
+    p.replaceChildren(h("span", { class: "dot" }), h("span", { i18n: on_ ? "smtp.statusOn" : "smtp.statusOff" }));
   }
-  on("smtp", () => { setSmtpPill(true); if (D.smtp) D.smtp.configured = true; });
+  on("smtp", () => { setSmtpPill(true); if (D.smtp) assignData("smtp", { ...D.smtp, configured: true }); });
 
   const EVENTS = {
     "login": ["event.login", "user", "slate"],
@@ -1565,27 +1453,127 @@
     return a.detail || "";
   }
 
+  // ── Google: the administrator's configuration and the member's own link
+  // The configuration card reports where the client ID comes from, whether a
+  // change applies at once, and which origins Google Cloud must authorize.
+  const GoogleCfg = { cfg: null };
+  async function loadGoogleSettings(generation, epoch) {
+    let cfg;
+    try { cfg = await api("GET", "/api/v1/setup/google"); } catch { return; }
+    if (!pageCurrent("settings", generation, epoch)) return;
+    GoogleCfg.cfg = cfg;
+    renderGoogleSettings();
+  }
+  function renderGoogleSettings() {
+    const cfg = GoogleCfg.cfg;
+    if (!cfg) return;
+    const input = $("#set-google-client");
+    if (document.activeElement !== input) input.value = cfg.client_id || "";
+    const pill = $("#gset-status");
+    pill.className = "pill " + (cfg.configured ? "ok" : "warn");
+    pill.replaceChildren(h("span", { class: "dot" }), h("span", { i18n: cfg.configured ? "gset.on" : "gset.off" }));
+    const source = cfg.source === "settings" ? (cfg.configured ? "gset.srcSettings" : cfg.env_set ? "gset.srcDisabled" : "gset.srcNone")
+      : cfg.source === "environment" ? "gset.srcEnv" : "gset.srcNone";
+    K.tl($("#gset-source"), source);
+    const origins = cfg.origins || [];
+    $("#gset-origins").replaceChildren(...origins.map((o) => h("li", null, h("code", { class: "mono" }, o), inlineCopy(o, "common.copy"))));
+    $("#gset-origins-block").hidden = !origins.length;
+  }
+
+  const GLink = { linked: false, configured: false };
+  async function loadGoogleLink(generation, epoch) {
+    let st;
+    try { st = await api("GET", "/api/v1/me/google"); } catch { $("#glink-row").hidden = true; return; }
+    if (!pageCurrent("settings", generation, epoch)) return;
+    Object.assign(GLink, { linked: !!st.linked, configured: !!st.configured });
+    await renderGoogleLink();
+  }
+  function glinkError(err) {
+    const box = $("#glink-err");
+    box.hidden = !err;
+    if (err) $("#glink-err-text").textContent = errText(err, "google");
+  }
+  async function onGoogleLink(resp) {
+    glinkError(null);
+    try {
+      await api("PUT", "/api/v1/me/google", { credential: resp.credential });
+      GLink.linked = true;
+      toast(t("glink.done"));
+      await renderGoogleLink();
+    } catch (err) { glinkError(err); }
+  }
+  async function renderGoogleLink() {
+    const row = $("#glink-row"), host = $('[data-role="glink-btn"]', row), unlink = $("#glink-unlink");
+    row.hidden = !(GLink.configured || GLink.linked);
+    if (row.hidden) return;
+    K.tl($("#glink-state"), GLink.linked ? "glink.linked" : "glink.desc");
+    unlink.hidden = !GLink.linked;
+    host.hidden = GLink.linked || !GLink.configured;
+    if (host.hidden) return;
+    try {
+      await Google.load();
+      const st = await Status.get(), cid = st && st.google_client_id ? String(st.google_client_id).trim() : "";
+      if (!cid || currentView !== "app" || App.page !== "settings") return;
+      Google.init(cid);
+      Google.handler = onGoogleLink;
+      Google.render(host);
+    } catch { glinkError({ status: 0, code: "google_unreachable", message: "" }); $("#glink-err-text").textContent = t("err.google.load"); }
+  }
+
   // ── console shell
-  let consoleReady = false, pollTimer = null;
+  let consoleReady = false, pollTimer = null, closeDrawer = () => {};
   function initConsole() {
     if (consoleReady) return;
     consoleReady = true;
-    const view = $("#view-app");
-    $("#btn-menu").addEventListener("click", () => view.classList.add("nav-open"));
-    $$("[data-nav-close]").forEach((el) => el.addEventListener("click", () => view.classList.remove("nav-open")));
+    const view = $("#view-app"), menuBtn = $("#btn-menu");
+    // The mobile drawer: Esc and the scrim close it, focus follows, the page
+    // behind does not scroll, and resizing to desktop releases all of it.
+    const drawer = (open) => {
+      view.classList.toggle("nav-open", open);
+      document.body.classList.toggle("nav-lock", open);
+      menuBtn.setAttribute("aria-expanded", String(open));
+      if (open) { const first = $("#sidebar .sb-nav a[aria-current]") || $("#sidebar .sb-nav a"); if (first) first.focus(); }
+      else if ($("#sidebar").contains(document.activeElement)) menuBtn.focus();
+    };
+    closeDrawer = () => { if (view.classList.contains("nav-open")) drawer(false); };
+    menuBtn.setAttribute("aria-controls", "sidebar");
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.addEventListener("click", () => drawer(true));
+    $$("[data-nav-close]").forEach((el) => el.addEventListener("click", () => drawer(false)));
+    $("#sidebar").addEventListener("click", (e) => { if (e.target.closest("a[href]")) drawer(false); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && view.classList.contains("nav-open") && $$(".modal").every((m) => m.hidden)) { e.preventDefault(); drawer(false); }
+    });
+    matchMedia("(min-width: 981px)").addEventListener("change", (e) => { if (e.matches) closeDrawer(); });
     const top = $("#app-top");
     window.addEventListener("scroll", () => top.classList.toggle("is-scrolled", window.scrollY > 4), { passive: true });
     const logout = async () => {
-      try { await api("POST", "/api/v1/auth/logout", {}, { quiet401: true }); } catch { /* already gone */ }
+      try { await api("POST", "/api/v1/auth/logout", {}, { quiet401: true }); }
+      catch (err) { if (err.status !== 401) { toast(errText(err), "err"); return; } }
+      Google.signedOut();
+      Resume.set("");
       Session.clear();
-      Object.assign(D, { devices: null, transfers: null, tunnels: null, pendingKey: null, relays: null, audit: [], projects: null, smtp: null });
-      go("#/");
+      go("#/", true);
     };
     $("#btn-logout").addEventListener("click", logout);
     $$("[data-logout]").forEach((b) => b.addEventListener("click", logout));
+    // A session that came from the platform may also end the platform session:
+    // revoke this project session first, then continue to the platform sign-out.
+    $("#logout-platform").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      try { Google.signedOut(); Resume.set(""); await K.sso.signOut(); }
+      catch (err) { toast(errText(err), "err"); }
+    }));
+    $("#glink-unlink").addEventListener("click", (e) => {
+      if (!window.confirm(t("glink.unlinkConfirm"))) return;
+      busy(e.currentTarget, async () => {
+        glinkError(null);
+        try { await api("DELETE", "/api/v1/me/google"); GLink.linked = false; toast(t("glink.removed")); await renderGoogleLink(); }
+        catch (err) { glinkError(err); }
+      });
+    });
     $("#dev-q").addEventListener("input", () => PAGES.devices.render());
     $("#audit-q").addEventListener("input", () => PAGES.audit.render());
-    $("#audit-refresh").addEventListener("click", (e) => busy(e.currentTarget, () => PAGES.audit.refresh()));
+    $("#audit-refresh").addEventListener("click", (e) => busy(e.currentTarget, () => PAGES.audit.refresh(false, true)));
     $("#audit-more").addEventListener("click", (e) => busy(e.currentTarget, async () => { try { await load.audit(); } catch (err) { toast(errText(err), "err"); } PAGES.audit.render(); }));
     const seg = (id, key, page) => $("#" + id).addEventListener("click", (e) => {
       const b = e.target.closest("button[data-f]");
@@ -1610,6 +1598,15 @@
       } catch (err) { toast(errText(err), "err"); }
       finally { sw.classList.remove("is-busy"); }
     });
+    $("#set-google-save").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      const clientID = $("#set-google-client").value.trim();
+      try {
+        await api("PUT", "/api/v1/setup/google", { client_id: clientID });
+        Status.invalidate();
+        toast(t("gset.saved"));
+        await loadGoogleSettings(pageGeneration, Session.epoch);
+      } catch (err) { toast(errText(err), "err"); }
+    }));
     $("#set-tunnels").addEventListener("click", async (e) => {
       const sw = e.currentTarget, next = sw.getAttribute("aria-checked") !== "true";
       sw.classList.add("is-busy");
@@ -1634,7 +1631,7 @@
         toast(t("app.settings.tunSaved"));
       } catch (err) { toast(errText(err), "err"); }
     }));
-    on("devices-changed", () => { D.devices = null; });
+    on("devices-changed", () => { Queries.invalidate("devices"); });
     on("modal-closed", (id) => {
       if (App.page && (id === "modal-enroll" || id === "modal-tunnel")) PAGES[App.page].refresh(true);
     });
@@ -1643,16 +1640,16 @@
   }
   function poll(delay) {
     clearTimeout(pollTimer);
-    const page = PAGES[App.page];
+    const name = App.page, page = PAGES[name], generation = pageGeneration, epoch = Session.epoch;
     if (!page) return;
     const every = page.interval ? page.interval() : 15000;
     if (!every) return;
     pollTimer = setTimeout(async () => {
+      if (!pageCurrent(name, generation, epoch)) return;
       if (document.visibilityState === "visible" && currentView === "app" && $$(".modal").every((m) => m.hidden)) {
-        try { await page.refresh(true); } catch { /* next tick */ }
-        load.health();
+        await Promise.allSettled([page.refresh(true), name === "overview" ? null : load.health()]);
       }
-      poll();
+      if (pageCurrent(name, generation, epoch)) poll();
     }, delay ?? every);
   }
   function setPageTitle() {
@@ -1665,9 +1662,11 @@
   async function showApp(page, me) {
     if (!PAGES[page]) { go("#/app/overview", true); return; }
     initConsole();
+    clearTimeout(pollTimer);
+    const generation = ++pageGeneration, epoch = Session.epoch;
     App.me = me;
     showView("app");
-    $("#view-app").classList.remove("nav-open");
+    closeDrawer();
     $("#u-name").textContent = me.username;
     $("#u-role").textContent = me.role === "admin" ? t("common.admin") : t("common.member");
     $("#u-avatar").textContent = (me.username || "?").slice(0, 1);
@@ -1681,11 +1680,12 @@
     for (const sec of $$("[data-page]")) sec.hidden = sec.dataset.page !== page;
     setPageTitle();
     if (changed) window.scrollTo(0, 0);
-    load.health();
+    if (page !== "overview") void load.health().catch(() => {});
     await PAGES[page].refresh(false);
-    poll();
+    if (pageCurrent(page, generation, epoch)) poll();
   }
   on("lang", () => {
+    describeSite();
     if (currentView === "app" && App.page) {
       setPageTitle();
       $("#u-role").textContent = App.me && App.me.role === "admin" ? t("common.admin") : t("common.member");
@@ -1693,8 +1693,8 @@
       renderHealth();
       updateCounts();
     }
-    if (currentView === "auth") document.title = $(`[data-panel="${currentPanel}"] .auth-title`).textContent + " · MeshBridge";
-    if (currentView === "landing") document.title = t("meta.title");
+    renderTitle();
+    if (currentView === "landing") void renderAccount();
   });
 
   // ───────────────────────── new-transfer modal ─────────────────────────
@@ -1774,40 +1774,165 @@
   }
 
   // ───────────────────────── router ─────────────────────────
+  // What a hash means on this surface is decided by rules.js (a pure table,
+  // tested in Node). This part only gathers the facts it asks for and carries
+  // the decision out.
+  let ssoRunning = null, ssoAuthorized = null, callbackRunning = null;
+
+  // Platform origin: a project asked for a sign-in (authorize), or the
+  // platform session ends (logout).
+  async function routeSSO(hash) {
+    if (ssoRunning || ssoAuthorized === hash) return ssoRunning;
+    ssoRunning = (async () => {
+      const panel = $('[data-panel="sso"]');
+      await showAuth("sso");
+      showErr(panel, "");
+      K.tl($("#sso-message"), "sso.working");
+      try {
+        if (hash === "#/sso/logout") {
+          try { await api("POST", "/api/v1/auth/logout", {}, { quiet401: true }); }
+          catch (err) { if (err.status !== 401) throw err; }
+          Session.clear(); Resume.set("");
+          go("#/", true);
+          return;
+        }
+        const metadata = await api("GET", "/api/v1/sso/status", null, { auth: false });
+        if (!metadata.enabled) { K.tl($("#sso-message"), "sso.disabled"); return; }
+        const body = K.sso.authorization(hash, metadata);
+        Resume.set(hash);
+        const me = await Session.me();
+        if (!me) {
+          await showAuth("login");
+          const note = $('[data-role="notice"]', $('[data-panel="login"]'));
+          $('[data-role="notice-text"]', note).textContent = t("sso.loginContinue");
+          note.hidden = false;
+          return;
+        }
+        const data = await api("POST", "/api/v1/sso/authorize", body, { quiet401: true });
+        const destination = K.sso.redirect(data.redirect_url, body, metadata);
+        ssoAuthorized = hash; Resume.set("");
+        location.assign(destination);
+      } catch (err) {
+        if (K.isQueryCancelled(err)) return;
+        if (err.status === 401) {
+          Session.clear(); await showAuth("login");
+          showErr($("#form-login"), t("auth.sessionExpired"));
+        } else {
+          await showAuth("sso"); K.tl($("#sso-message"), "sso.failed");
+          showErr(panel, errText(err));
+        }
+      }
+    })();
+    try { await ssoRunning; } finally { ssoRunning = null; }
+  }
+
+  // Project origin: the platform sent the browser back with a single-use code.
+  // The code and state live only in memory (kit sso.js removed them from the
+  // URL before anything else ran); the server redeems them with its own PKCE
+  // verifier and answers with this origin's own session.
+  async function routeCallback() {
+    if (callbackRunning) return callbackRunning;
+    callbackRunning = (async () => {
+      await showAuth("callback");
+      const panel = $('[data-panel="callback"]'), actions = $("#callback-actions");
+      showErr(panel, ""); actions.hidden = true;
+      K.tl($("#callback-message"), "mb.sso.working");
+      try {
+        const data = await K.sso.complete();
+        if (!data || !data.token) throw new ApiError(401, "sso_invalid", "invalid sign-in");
+        Session.set(data.token);
+        go(Rules.safeResume(data.next) || Rules.safeResume(Resume.take()) || "#/app/overview", true);
+      } catch (err) {
+        if (K.isQueryCancelled(err)) return;
+        K.tl($("#callback-message"), "mb.sso.failed");
+        showErr(panel, errText(err));
+        actions.hidden = false;
+      }
+    })();
+    try { await callbackRunning; } finally { callbackRunning = null; }
+  }
+
   function go(hash, replace) {
     if (location.hash === hash) { route(); return; }
     if (replace) location.replace(hash); else location.hash = hash;
   }
   const DEEP = ["/login", "/register", "/forgot", "/setup", "/app"];
+  let routeGeneration = 0;
   async function route() {
+    const generation = ++routeGeneration;
+    try { await routeCurrent(generation); }
+    catch (err) { if (!K.isQueryCancelled(err) && generation === routeGeneration) { console.error(err); showFault(err); } }
+  }
+  async function routeCurrent(generation) {
     const path = location.pathname.replace(/\/+$/, "");
     if (DEEP.includes(path)) { history.replaceState(null, "", "/#" + path + location.search); }
     const hash = location.hash;
-    if (hash && !hash.startsWith("#/")) { await showLanding(hash.slice(1)); return; }
-    const [top = "", sub = ""] = hash.replace(/^#\/?/, "").split("/");
-    const st = await Status.get();
-    if (st && st.setup_required) {
-      if (top !== "setup") { go("#/setup", true); return; }
-      await showAuth("setup");
-      return;
+    const current = () => generation === routeGeneration && location.hash === hash;
+    // Facts are fetched only when a decision needs them. A server that cannot
+    // answer rejects (a fault), which the planner turns into the service view:
+    // it is never mistaken for "not signed in".
+    const facts = {
+      setupRequired: async () => {
+        const st = await Status.get();
+        if (!st) throw new ApiError(0, "network", "setup status unavailable");
+        return !!st.setup_required;
+      },
+      session: async () => ((await Session.me()) ? "valid" : "none"),
+    };
+    const decision = await Rules.plan({
+      surface: Surface.info, hash, resume: Resume.get(),
+      wizard: currentView === "auth" && currentPanel === "setup" && setupStep > 1, facts,
+    });
+    if (!current()) return;
+    switch (decision.type) {
+      case "navigate": location.replace(decision.url); return;
+      case "replace":
+        if (decision.resume) Resume.set(decision.resume);
+        go(decision.hash, true);
+        return;
+      case "fault":
+        if (!K.isQueryCancelled(decision.error)) showFault(decision.error);
+        return;
+      default:
     }
-    if (top === "setup" && !(currentView === "auth" && currentPanel === "setup" && setupStep > 1)) { go(Session.token() ? "#/app/overview" : "#/login", true); return; }
-    if (top === "setup") return;
-    const me = await Session.me();
-    switch (top) {
-      case "": if (me) go("#/app/overview", true); else await showLanding(); return;
-      case "login": case "register": case "forgot":
-        if (me) go("#/app/overview", true); else await showAuth(top);
+    switch (decision.view) {
+      case "landing": Resume.set(""); await showLanding(decision.anchor); return;
+      case "auth": await showAuth(decision.panel); return;
+      case "app": {
+        const me = await Session.me();
+        if (!me || !current()) return;
+        Resume.set("");
+        await showApp(decision.page, me);
         return;
-      case "app":
-        if (!me) { go("#/login", true); return; }
-        await showApp(sub || "overview", me);
+      }
+      case "sso":
+        if (decision.mode === "callback") await routeCallback(); else await routeSSO(hash);
         return;
-      default: go("#/", true);
+      default:
     }
   }
 
   // ───────────────────────── boot ─────────────────────────
+  // A fault is retried from scratch: forget what was cached while the server
+  // could not answer, keep the session.
+  function forgetFaults() { Session.reset(store.get("token") || ""); Status.invalidate(); }
+  let wired = false;
+  async function start() {
+    try { await Surface.load(); }
+    catch (err) { showFault(err); return; }
+    applySurface();
+    if (!wired) {
+      wired = true;
+      window.addEventListener("hashchange", route);
+      window.addEventListener("storage", (event) => {
+        if (event.key !== null && event.key !== document.documentElement.dataset.app + "_token") return;
+        const epoch = Session.epoch;
+        Session.token();
+        if (Session.epoch !== epoch) void route();
+      });
+    }
+    await route();
+  }
   async function boot() {
     $$("[data-year]").forEach((el) => (el.textContent = String(new Date().getFullYear())));
     $("[data-skip]").addEventListener("click", (e) => {
@@ -1815,14 +1940,30 @@
       const main = $(`#view-${currentView} main`);
       if (main) { main.setAttribute("tabindex", "-1"); main.focus(); }
     });
-    mountLangPickers();
+    mountSharedChrome();
+    await K.loadSprite("/assets/kit/icons.svg", { missingOnly: true });
     initPasswordFields();
     initSendCode();
     initAuthForms();
+    $("#sso-retry").addEventListener("click", () => busy($("#sso-retry"), () => routeSSO(location.hash)));
+    $("#callback-retry").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      try { await K.sso.start(Rules.safeResume(Resume.get()) || "#/app/overview"); }
+      catch (err) { showErr($('[data-panel="callback"]'), errText(err)); }
+    }));
+    $("#mb-sso").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      showErr($("#form-login"), "");
+      try { await K.sso.start(Rules.safeResume(Resume.get()) || "#/app/overview"); }
+      catch (err) { showErr($("#form-login"), errText(err)); }
+    }));
+    $('[data-role="gsign-retry"]', gsignBox()).addEventListener("click", () => { if (currentPanel === "login") void mountAltAuth(); });
+    $("#service-retry").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      if (!Surface.loaded) { await start(); return; }
+      forgetFaults();
+      await route();
+    }));
     try { await I18N.use(detectLang(), false); }
     catch (e) { console.error("i18n failed", e); }
-    window.addEventListener("hashchange", route);
-    await route();
+    await start();
   }
   boot();
 })();
