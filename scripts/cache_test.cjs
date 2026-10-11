@@ -20,6 +20,7 @@ async function harness() {
   Object.defineProperty(context.Element.prototype, "firstChild", { get() { return this.children[0]; } });
   context.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   context.window.scrollTo = () => {};
+  context.window.matchMedia = context.matchMedia = () => ({ matches: false, addEventListener() {} });
   const nodes = new Map(), nested = new WeakMap();
   const node = (selector, root) => {
     let map = nodes;
