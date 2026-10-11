@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/meshbridge/meshbridge/internal/auth"
+	"github.com/mineai/kit/httpx"
 )
 
 // Tunnel is the persisted configuration of one public tunnel.
@@ -224,20 +225,7 @@ const (
 	KeyAttemptWindow = 15 * time.Minute
 )
 
-// ClientIP trusts X-Forwarded-For only from loopback (Caddy); otherwise
-// RemoteAddr, so a direct attacker cannot spoof its IP through the header.
+// ClientIP shares the app family's trusted local-proxy policy.
 func ClientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if first, _, ok := strings.Cut(xff, ","); ok {
-				return strings.TrimSpace(first)
-			}
-			return strings.TrimSpace(xff)
-		}
-	}
-	return host
+	return httpx.ClientIP(r)
 }

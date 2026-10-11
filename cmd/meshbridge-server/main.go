@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -29,8 +31,10 @@ import (
 	"github.com/meshbridge/meshbridge/internal/headscale"
 	"github.com/meshbridge/meshbridge/internal/mailer"
 	"github.com/meshbridge/meshbridge/internal/secret"
+	"github.com/meshbridge/meshbridge/internal/serverlimits"
 	"github.com/meshbridge/meshbridge/internal/settings"
 	"github.com/meshbridge/meshbridge/internal/tunnel"
+	"github.com/mineai/kit/httpx"
 	"golang.org/x/term"
 )
 
@@ -95,7 +99,34 @@ func main() {
 	}
 
 	srv := api.New(database)
-	srv.BaseURL = os.Getenv("MESH_BASE_URL")
+	lifetime, cancelLifetime := context.WithCancel(context.Background())
+	defer cancelLifetime()
+	srv.Lifetime = lifetime
+	srv.BaseURL = cfg.BaseURL
+	srv.ProjectURL = cfg.ProjectURL
+	srv.GoogleClientID = cfg.GoogleClientID
+	if cfg.SSOEnabled {
+		// The six account applications are declared; the MeshBridge project is a
+		// seventh client derived from its own origin, never from request input.
+		clients := make(map[string]string, len(cfg.SSOClients)+1)
+		for id, callback := range cfg.SSOClients {
+			clients[id] = callback
+		}
+		if cfg.ProjectSSOEnabled() {
+			clients[config.ProjectSSOClientID] = cfg.ProjectCallback()
+		}
+		if err := srv.EnableSSO(cfg.SSOIssuer, clients, cfg.SSODev); err != nil {
+			log.Fatalf("platform SSO: %v", err)
+		}
+		if cfg.ProjectSSOEnabled() {
+			if err := srv.EnableProjectSSO(cfg.SSODev); err != nil {
+				log.Fatalf("project SSO: %v", err)
+			}
+		}
+	}
+	if cfg.ProjectURL != "" {
+		log.Printf("surfaces: platform=%s project=%s project-sso=%v", cfg.BaseURL, cfg.ProjectURL, cfg.ProjectSSOEnabled())
+	}
 	// Master key unlocks secret encryption (SMTP passwords, …). Without it the
 	// web onboarding mail features stay disabled (log once, keep serving API).
 	var masterKey []byte
@@ -146,20 +177,18 @@ func main() {
 	}
 	gw := tunnel.NewGateway(tunnel.GatewayConfig{
 		DB:         database,
+		SSOEnabled: cfg.SSOEnabled,
 		Secret:     gateSecret[:],
 		BaseURL:    srv.BaseURL,
 		BaseDomain: baseDomain,
 	})
 	srv.Gateway = gw
+	gw.StartMeter(lifetime)
 	// Health reflects real Headscale reachability when an API key is present.
 	if cfg.HeadscaleURL != "" {
 		hs := headscale.New(cfg.HeadscaleURL, cfg.HeadscaleAPIKey)
 		srv.HS = hs
-		srv.HSOK = func() bool {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			return hs.Health(ctx) == nil
-		}
+		srv.HSProbe = func(ctx context.Context) bool { return hs.Health(ctx) == nil }
 	}
 	// Web UI from the embedded filesystem, SPA fallback to index.html.
 	// /dl/ is NOT part of the SPA: the install script curls origin/dl/* with
@@ -167,30 +196,69 @@ func main() {
 	// as the agent binary. Fail loudly until an agent download path exists.
 	srv.Mux.Handle("/dl/", http.NotFoundHandler())
 	srv.Mux.Handle("/", webHandler())
+	apiHandlers := serverlimits.Handler(srv.Mux, serverlimits.API)
 	httpSrv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           srv.Mux,
+		Handler:           httpx.Secure(apiHandlers),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return lifetime },
 	}
+	apiLN, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		log.Fatalf("API listen: %v", err)
+	}
+	apiLN = serverlimits.Listener(apiLN, serverlimits.API)
+	servers := []*http.Server{httpSrv}
+	listeners := []net.Listener{apiLN}
+	handlers := []*serverlimits.Requests{apiHandlers}
 	// Visitor-facing tunnel gateway on its own loopback listener so proxy
 	// traffic never competes with API connection limits (Caddy routes /t/*
 	// and t-*.domain here). No WriteTimeout: proxied bodies may be slow.
 	if cfg.GatewayListenAddr != "" {
+		gwHandlers := serverlimits.Handler(gw.Handler(), serverlimits.Gateway)
 		gwSrv := &http.Server{
 			Addr:              cfg.GatewayListenAddr,
-			Handler:           gw.Handler(),
+			Handler:           gwHandlers,
 			ReadHeaderTimeout: 15 * time.Second,
 			IdleTimeout:       120 * time.Second,
+			BaseContext:       func(net.Listener) context.Context { return lifetime },
 		}
 		ln, err := net.Listen("tcp", cfg.GatewayListenAddr)
 		if err != nil {
+			_ = apiLN.Close()
 			log.Fatalf("tunnel gateway listen: %v", err)
 		}
+		ln = serverlimits.Listener(ln, serverlimits.Gateway)
+		servers = append(servers, gwSrv)
+		listeners = append(listeners, ln)
+		handlers = append(handlers, gwHandlers)
 		log.Printf("tunnel gateway listening on %s (base domain %q)", cfg.GatewayListenAddr, baseDomain)
-		go func() { log.Fatal(gwSrv.Serve(ln)) }()
 	}
 	log.Printf("meshbridge-server listening on %s (data=%s)", cfg.ListenAddr, cfg.DataDir)
-	log.Fatal(httpSrv.ListenAndServe())
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stopSignals()
+	serveErr := make(chan error, len(servers))
+	for i, s := range servers {
+		ln := listeners[i]
+		go func() { serveErr <- s.Serve(ln) }()
+	}
+	select {
+	case <-signalCtx.Done():
+	case err := <-serveErr:
+		if !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+			log.Printf("HTTP serve: %v", err)
+		}
+	}
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelShutdown()
+	owner := newShutdownOwner(cancelLifetime, servers, listeners, handlers, gw)
+	if err := owner.shutdown(shutdownCtx); err != nil {
+		// A timed-out owner may still touch SQLite. Preserve it until process
+		// exit instead of closing it underneath a handler or pending flush.
+		log.Printf("shutdown: %v", err)
+		os.Exit(1)
+	}
 }
 
 func atoiOr(s string, def int) int {

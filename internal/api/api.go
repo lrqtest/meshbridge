@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -18,55 +17,68 @@ import (
 	"github.com/meshbridge/meshbridge/internal/auth"
 	"github.com/meshbridge/meshbridge/internal/headscale"
 	"github.com/meshbridge/meshbridge/internal/mailer"
-	"github.com/meshbridge/meshbridge/internal/metrics"
 	"github.com/meshbridge/meshbridge/internal/policy"
 	"github.com/meshbridge/meshbridge/internal/tunnel"
+	kitauth "github.com/mineai/kit/auth"
+	"github.com/mineai/kit/httpx"
+	"github.com/mineai/kit/sso"
 )
 
 type Server struct {
-	DB            *sql.DB
-	Mux           *http.ServeMux
-	HSURL         string
-	HSOK          func() bool
-	HS            *headscale.Client
-	Mailer        *mailer.Service
-	MasterKey     []byte
-	BaseURL       string // public base URL, e.g. https://mineai.top
-	Gateway       *tunnel.Gateway
-	loginFailures *loginLimiter
-}
-
-type ErrBody struct {
-	Error string `json:"error"`
-	Code  string `json:"code"`
+	DB               *sql.DB
+	Mux              *http.ServeMux
+	HSURL            string
+	HSOK             func() bool
+	HSProbe          func(context.Context) bool
+	Lifetime         context.Context
+	HS               *headscale.Client
+	Mailer           *mailer.Service
+	MasterKey        []byte
+	BaseURL          string // platform origin, e.g. https://mineai.top (the SSO issuer)
+	ProjectURL       string // MeshBridge project origin, e.g. https://meshbridge.mineai.top; empty = single surface
+	ProjectSSO       *sso.Client
+	Gateway          *tunnel.Gateway
+	SSO              *sso.Provider
+	SSOIssuer        string
+	SSOClients       map[string]string
+	Google           *kitauth.GoogleVerifier
+	GoogleClientID   string // optional deployment fallback; the DB setting wins
+	loginFailures    *loginLimiter
+	startLimiter     *windowLimiter
+	healthMu         sync.Mutex
+	healthUntil      time.Time
+	healthDone       chan struct{}
+	healthSnapshot   map[string]any
+	healthGeneration uint64
 }
 
 func writeErr(w http.ResponseWriter, code int, errCode, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(ErrBody{Error: msg, Code: errCode})
+	httpx.WriteErr(w, httpx.E(code, errCode, msg))
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
+	httpx.WriteJSON(w, v)
 }
 
 func New(db *sql.DB) *Server {
-	s := &Server{DB: db, Mux: http.NewServeMux(), HSOK: func() bool { return true }, loginFailures: newLoginLimiter()}
+	s := &Server{DB: db, Mux: http.NewServeMux(), HSOK: func() bool { return true }, loginFailures: newLoginLimiter(), startLimiter: newStartLimiter(), Google: &kitauth.GoogleVerifier{}}
 	s.routes()
 	return s
 }
 
 func (s *Server) routes() {
 	s.Mux.HandleFunc("/api/v1/health", s.handleHealth)
+	s.Mux.HandleFunc("/api/v1/surface", s.handleSurface)
 	s.Mux.HandleFunc("/api/v1/me", s.requireAuth(s.handleMe))
+	s.Mux.HandleFunc("/api/v1/me/google", s.requireAuth(s.handleMeGoogle))
 	s.Mux.HandleFunc("/api/v1/setup/status", s.handleSetupStatus)
 	s.Mux.HandleFunc("/api/v1/setup/initial", s.handleSetupInitial)
 	s.Mux.HandleFunc("/api/v1/setup/smtp", s.handleSetupSMTP)
 	s.Mux.HandleFunc("/api/v1/setup/smtp/test", s.handleSMTPTest)
 	s.Mux.HandleFunc("/api/v1/setup/registration", s.handleSetupRegistration)
+	s.Mux.HandleFunc("/api/v1/setup/google", s.handleGoogleSettings)
 	s.Mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
+	s.Mux.HandleFunc("/api/v1/auth/google", s.handleGoogleLogin)
 	s.Mux.HandleFunc("/api/v1/auth/logout", s.handleLogout)
 	s.Mux.HandleFunc("/api/v1/auth/send-code", s.handleSendCode)
 	s.Mux.HandleFunc("/api/v1/auth/register", s.handleRegister)
@@ -79,6 +91,8 @@ func (s *Server) routes() {
 	s.Mux.HandleFunc("/api/v1/transfers", s.requireAuth(s.handleTransfers))
 	s.Mux.HandleFunc("/api/v1/relays", s.requireAuth(s.handleRelays))
 	s.Mux.HandleFunc("/api/v1/audit", s.requireAuth(s.handleAudit))
+	s.routesSSO()
+	s.routesProjectSSO()
 	s.routesTunnels()
 	s.Mux.HandleFunc("/health", s.handleHealth)
 }
@@ -145,37 +159,13 @@ func (l *loginLimiter) reset(key string) {
 	delete(l.seen, key)
 }
 
-// clientIP trusts X-Forwarded-For only from loopback (Caddy); otherwise
-// RemoteAddr, so a direct attacker cannot spoof its IP through the header.
+// Use the same trusted local-proxy policy as the app family and tunnel gate.
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first := strings.TrimSpace(strings.Split(xff, ",")[0])
-			if first != "" {
-				return first
-			}
-		}
-	}
-	return host
+	return httpx.ClientIP(r)
 }
 
 func pagParams(r *http.Request) (limit, offset int) {
-	limit, offset = 50, 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
-			limit = n
-		}
-	}
-	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 1 {
-			offset = (n - 1) * limit
-		}
-	}
-	return limit, offset
+	return httpx.Page(r, 50, 200)
 }
 
 // requireAuth accepts a Bearer API token (hashed at rest). Tokens with a
@@ -195,27 +185,25 @@ func requestUser(r *http.Request) authUser {
 	return u
 }
 
+// authenticateBearer is the single policy for every human bearer token.
+func (s *Server) authenticateBearer(r *http.Request) (authUser, bool) {
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, "Bearer ") {
+		return authUser{}, false
+	}
+	var u authUser
+	var disabled, exp int64
+	err := s.DB.QueryRowContext(r.Context(), `SELECT t.user_id,u.role,u.disabled,t.expires_at
+ FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`,
+		auth.HashToken(strings.TrimPrefix(h, "Bearer "))).Scan(&u.ID, &u.Role, &disabled, &exp)
+	return u, err == nil && disabled == 0 && (exp == 0 || exp > time.Now().Unix())
+}
+
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
-			writeErr(w, 401, "unauthorized", "missing bearer token")
-			return
-		}
-		raw := strings.TrimPrefix(h, "Bearer ")
-		hash := auth.HashToken(raw)
-		var u authUser
-		var disabled, exp int64
-		err := s.DB.QueryRow(`SELECT t.user_id,u.role,u.disabled,t.expires_at
-			FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`, hash).
-			Scan(&u.ID, &u.Role, &disabled, &exp)
-		if err != nil || disabled == 1 {
-			writeErr(w, 401, "unauthorized", "bad token")
-			return
-		}
-		if exp != 0 && time.Now().Unix() > exp {
-			_, _ = s.DB.Exec(`DELETE FROM api_tokens WHERE token_hash=?`, hash)
-			writeErr(w, 401, "unauthorized", "token expired")
+		u, ok := s.authenticateBearer(r)
+		if !ok {
+			writeErr(w, 401, "unauthorized", "invalid bearer token")
 			return
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), userCtxKey, u)))
@@ -247,21 +235,94 @@ func (s *Server) requireDeviceToken(next func(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	// Sweep: agents silent for 3 heartbeat windows are offline.
-	_, _ = s.DB.Exec(`UPDATE agents SET online=0 WHERE online=1 AND last_seen < ?`, time.Now().Unix()-120)
-	sum := metrics.SummaryFromDB(s.DB)
-	hs := "ok"
-	if s.HSOK != nil && !s.HSOK() {
-		hs = "unreachable"
+// Health snapshots share a synchronous probe: followers wait on one channel,
+// and cancelled followers leave promptly. No background goroutine or per-request
+// presence write is needed; stale presence is calculated from last_seen.
+func (s *Server) health(ctx context.Context) (map[string]any, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		s.healthMu.Lock()
+		if s.healthSnapshot != nil && time.Now().Before(s.healthUntil) {
+			out := s.healthSnapshot
+			s.healthMu.Unlock()
+			return out, nil
+		}
+		if done := s.healthDone; done != nil {
+			s.healthMu.Unlock()
+			select {
+			case <-done:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		s.healthDone = make(chan struct{})
+		generation := s.healthGeneration
+		s.healthMu.Unlock()
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		stopLifetime := func() bool { return false }
+		if s.Lifetime != nil {
+			stopLifetime = context.AfterFunc(s.Lifetime, cancel)
+		}
+		dbOK := s.DB.PingContext(probeCtx) == nil
+		var online, jobs int
+		if dbOK {
+			dbOK = s.DB.QueryRowContext(probeCtx, `SELECT COUNT(*) FROM agents WHERE online=1 AND last_seen>=?`, time.Now().Unix()-120).Scan(&online) == nil
+			if err := s.DB.QueryRowContext(probeCtx, `SELECT COUNT(*) FROM transfer_jobs WHERE state IN ('QUEUED','PROBING','TRANSFERRING','VERIFYING')`).Scan(&jobs); err != nil {
+				dbOK = false
+			}
+		}
+		hs := "ok"
+		if (s.HSProbe != nil && !s.HSProbe(probeCtx)) || (s.HSProbe == nil && s.HSOK != nil && !s.HSOK()) {
+			hs = "unreachable"
+		}
+		stopLifetime()
+		cancel()
+		out := map[string]any{"ok": dbOK && hs == "ok", "headscale": hs, "agents_online": online,
+			"jobs_active": jobs, "time": time.Now().UTC().Format(time.RFC3339)}
+		s.healthMu.Lock()
+		if ctx.Err() == nil && s.healthGeneration == generation {
+			s.healthSnapshot = out
+			duration := 15 * time.Second
+			if !dbOK || hs != "ok" {
+				duration = 5 * time.Second // retry outages sooner than healthy probes
+			}
+			s.healthUntil = time.Now().Add(duration)
+		}
+		close(s.healthDone)
+		s.healthDone = nil
+		s.healthMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return out, nil
 	}
-	writeJSON(w, map[string]any{
-		"ok":            hs == "ok",
-		"headscale":     hs,
-		"agents_online": sum.AgentsOnline,
-		"jobs_active":   sum.JobsActive,
-		"time":          time.Now().UTC().Format(time.RFC3339),
-	})
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	out, err := s.health(r.Context())
+	if err != nil {
+		writeErr(w, 503, "unavailable", "health probe cancelled")
+		return
+	}
+	// Copy the cached snapshot: meter degradation and shutdown must take
+	// effect immediately, without mutating data shared by concurrent callers.
+	response := make(map[string]any, len(out)+1)
+	for k, v := range out {
+		response[k] = v
+	}
+	meterOK := s.Gateway == nil || s.Gateway.MeterReady()
+	response["meter_degraded"] = !meterOK
+	ready, _ := out["ok"].(bool)
+	ready = ready && meterOK && (s.Lifetime == nil || s.Lifetime.Err() == nil)
+	response["ok"] = ready
+	status := http.StatusOK
+	if !ready {
+		status = http.StatusServiceUnavailable
+	}
+	httpx.WriteStatus(w, status, response)
 }
 
 const loginTokenTTL = 24 * time.Hour
@@ -286,7 +347,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
+	if err := decodeAuthJSON(w, r, &in); err != nil {
 		writeErr(w, 400, "bad_request", "bad json")
 		return
 	}
@@ -300,13 +361,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	err := s.DB.QueryRow(`SELECT id,password_hash,disabled FROM users WHERE username=? OR email=?`,
 		in.Username, strings.ToLower(strings.TrimSpace(in.Username))).Scan(&id, &phash, &disabled)
 	if err != nil || disabled == 1 {
-		auth.DummyVerify(in.Password) // equal Argon2 work: no timing-based username probing
+		if err := auth.DummyVerifyContext(r.Context(), in.Password); err != nil {
+			return
+		} // equal work
 		s.loginFailures.recordFailure(ipKey, time.Now())
 		s.loginFailures.recordFailure(userKey, time.Now())
 		writeErr(w, 401, "unauthorized", "bad credentials")
 		return
 	}
-	ok, _ := auth.VerifyPassword(phash, in.Password)
+	ok, verifyErr := auth.VerifyPasswordContext(r.Context(), phash, in.Password)
+	if verifyErr != nil && r.Context().Err() != nil {
+		return
+	}
 	if !ok {
 		s.loginFailures.recordFailure(ipKey, time.Now())
 		s.loginFailures.recordFailure(userKey, time.Now())
@@ -315,11 +381,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	s.loginFailures.reset(ipKey)
 	s.loginFailures.reset(userKey)
-	raw, _ := auth.RandomToken(32)
-	_, _ = s.DB.Exec(`INSERT INTO api_tokens(token_hash,user_id,name,created_at,expires_at) VALUES(?,?,?,?,?)`,
-		auth.HashToken(raw), id, "login", time.Now().Unix(), time.Now().Add(loginTokenTTL).Unix())
+	raw, err := auth.RandomToken(32)
+	if err != nil {
+		writeErr(w, 503, "unavailable", "login temporarily unavailable")
+		return
+	}
+	now := time.Now()
+	expiry := now.Add(loginTokenTTL).Unix()
+	if _, err := s.DB.ExecContext(r.Context(), `INSERT INTO api_tokens(token_hash,user_id,name,created_at,expires_at) VALUES(?,?,?,?,?)`, auth.HashToken(raw), id, "login", now.Unix(), expiry); err != nil {
+		writeErr(w, 503, "unavailable", "login temporarily unavailable")
+		return
+	}
 	_ = audit.Log(r.Context(), s.DB, in.Username, "login", "", "", "", "login ok")
-	writeJSON(w, map[string]any{"token": raw, "expires_at": time.Now().Add(loginTokenTTL).Unix()})
+	writeJSON(w, map[string]any{"token": raw, "expires_at": expiry})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -327,9 +401,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 405, "method", "POST/DELETE only")
 		return
 	}
-	h := r.Header.Get("Authorization")
-	if strings.HasPrefix(h, "Bearer ") {
-		_, _ = s.DB.Exec(`DELETE FROM api_tokens WHERE token_hash=?`, auth.HashToken(strings.TrimPrefix(h, "Bearer ")))
+	if err := s.revokeBearer(r); err != nil {
+		writeErr(w, 503, "unavailable", "logout temporarily unavailable")
+		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
 }
@@ -486,7 +560,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 			where = ` WHERE d.owner_user_id=?`
 			args = append(args, me.ID)
 		}
-		rows, err := s.DB.Query(`SELECT d.id,d.hostname,d.tailscale_ip,a.online,a.last_seen FROM devices d LEFT JOIN agents a ON a.device_id=d.id`+where+` ORDER BY d.created_at DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+		rows, err := s.DB.Query(`SELECT d.id,d.hostname,d.tailscale_ip,(a.online=1 AND a.last_seen>=unixepoch()-120),a.last_seen FROM devices d LEFT JOIN agents a ON a.device_id=d.id`+where+` ORDER BY d.created_at DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 		if err != nil {
 			writeErr(w, 500, "db", "query failed")
 			return
@@ -629,6 +703,29 @@ func (s *Server) handleTransfers(w http.ResponseWriter, r *http.Request) {
 		if !transferPathOK(in.SrcPath) || !transferPathOK(in.DstPath) {
 			writeErr(w, 400, "bad_request", "paths must be relative and traversal-free (resolved against agent allowed_roots)")
 			return
+		}
+		// The schema requires a project; verify every referenced object before
+		// admitting a job so foreign devices cannot be targeted through IDs.
+		var srcOwner, dstOwner string
+		if err := s.DB.QueryRowContext(r.Context(), `SELECT owner_user_id FROM devices WHERE id=?`, in.Src).Scan(&srcOwner); err != nil {
+			writeErr(w, 404, "not_found", "source device not found")
+			return
+		}
+		if err := s.DB.QueryRowContext(r.Context(), `SELECT owner_user_id FROM devices WHERE id=?`, in.Dst).Scan(&dstOwner); err != nil {
+			writeErr(w, 404, "not_found", "destination device not found")
+			return
+		}
+		var projectExists int
+		if err := s.DB.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM projects WHERE id=?`, in.ProjectID).Scan(&projectExists); err != nil || projectExists == 0 {
+			writeErr(w, 404, "not_found", "project not found")
+			return
+		}
+		if me.Role != "admin" {
+			var member int
+			if err := s.DB.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM project_memberships WHERE project_id=? AND user_id=?`, in.ProjectID, me.ID).Scan(&member); err != nil || member == 0 || srcOwner != me.ID || dstOwner != me.ID {
+				writeErr(w, 403, "forbidden", "project membership and device ownership required")
+				return
+			}
 		}
 		raw, _ := auth.RandomToken(16)
 		id := auth.HashToken(raw + strconv.FormatInt(time.Now().UnixNano(), 10))[:16]

@@ -29,7 +29,9 @@ func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		"setup_required":     admins == 0,
 		"smtp_configured":    smtpHost != "",
 		"allow_registration": allowReg == "1",
+		"google_client_id":   s.googleClientID(),
 		"server_time":        time.Now().Unix(),
+		"sso":                s.ssoMetadata(),
 	})
 }
 
@@ -147,7 +149,7 @@ func (s *Server) handleSetupInitial(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&in); err != nil {
+	if err := decodeAuthJSON(w, r, &in); err != nil {
 		writeErr(w, 400, "bad_request", "bad json")
 		return
 	}
@@ -160,7 +162,7 @@ func (s *Server) handleSetupInitial(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "bad_code", "invalid or expired verification code")
 		return
 	}
-	hash, err := auth.HashPassword(in.Password)
+	hash, err := auth.HashPasswordContext(r.Context(), in.Password)
 	if err != nil {
 		writeErr(w, 400, "bad_request", err.Error())
 		return
@@ -200,7 +202,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&in); err != nil {
+	if err := decodeAuthJSON(w, r, &in); err != nil {
 		writeErr(w, 400, "bad_request", "bad json")
 		return
 	}
@@ -219,7 +221,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "bad_code", "invalid or expired verification code")
 		return
 	}
-	hash, err := auth.HashPassword(in.Password)
+	hash, err := auth.HashPasswordContext(r.Context(), in.Password)
 	if err != nil {
 		writeErr(w, 400, "bad_request", err.Error())
 		return
@@ -254,7 +256,7 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 		Code    string `json:"code"`
 		NewPass string `json:"new_password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&in); err != nil {
+	if err := decodeAuthJSON(w, r, &in); err != nil {
 		writeErr(w, 400, "bad_request", "bad json")
 		return
 	}
@@ -275,7 +277,7 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "bad_code", "invalid or expired verification code")
 		return
 	}
-	hash, err := auth.HashPassword(in.NewPass)
+	hash, err := auth.HashPasswordContext(r.Context(), in.NewPass)
 	if err != nil {
 		writeErr(w, 400, "bad_request", err.Error())
 		return
@@ -427,19 +429,12 @@ func (s *Server) handleSetupRegistration(w http.ResponseWriter, r *http.Request)
 
 // requireAdminToken authenticates and asserts role=admin.
 func (s *Server) requireAdminToken(w http.ResponseWriter, r *http.Request) bool {
-	h := r.Header.Get("Authorization")
-	if !strings.HasPrefix(h, "Bearer ") {
-		writeErr(w, 401, "unauthorized", "missing bearer token")
+	u, ok := s.authenticateBearer(r)
+	if !ok {
+		writeErr(w, 401, "unauthorized", "invalid bearer token")
 		return false
 	}
-	var role string
-	err := s.DB.QueryRow(`SELECT u.role FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`,
-		auth.HashToken(strings.TrimPrefix(h, "Bearer "))).Scan(&role)
-	if err != nil {
-		writeErr(w, 401, "unauthorized", "bad token")
-		return false
-	}
-	if role != "admin" {
+	if u.Role != "admin" {
 		writeErr(w, 403, "forbidden", "admin only")
 		return false
 	}
@@ -448,20 +443,19 @@ func (s *Server) requireAdminToken(w http.ResponseWriter, r *http.Request) bool 
 
 // handleMe returns the authenticated user's profile for the UI.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	h := r.Header.Get("Authorization")
-	if !strings.HasPrefix(h, "Bearer ") {
-		writeErr(w, 401, "unauthorized", "missing bearer token")
-		return
-	}
-	var username, role, email string
-	err := s.DB.QueryRow(`SELECT u.username, u.role, COALESCE(u.email,'') FROM api_tokens t
-		JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`,
-		auth.HashToken(strings.TrimPrefix(h, "Bearer "))).Scan(&username, &role, &email)
+	u := requestUser(r)
+	var username, email string
+	err := s.DB.QueryRowContext(r.Context(), `SELECT username,COALESCE(email,'') FROM users WHERE id=?`, u.ID).Scan(&username, &email)
 	if err != nil {
-		writeErr(w, 401, "unauthorized", "bad token")
+		writeErr(w, 401, "unauthorized", "invalid bearer token")
 		return
 	}
-	writeJSON(w, map[string]any{"username": username, "role": role, "email": email})
+	// sso: this session was derived from the platform sign-in, so signing out
+	// of the project can also offer to sign out of the platform.
+	var grant sql.NullString
+	_ = s.DB.QueryRowContext(r.Context(), `SELECT grant_hash FROM api_tokens WHERE token_hash=?`,
+		auth.HashToken(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))).Scan(&grant)
+	writeJSON(w, map[string]any{"username": username, "role": u.Role, "email": email, "sso": grant.Valid})
 }
 
 // ---- device enrollment command ----

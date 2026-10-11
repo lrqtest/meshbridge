@@ -3,105 +3,59 @@
 package auth
 
 import (
+	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/argon2"
+	"github.com/mineai/kit/password"
+	"github.com/mineai/kit/token"
 )
 
-const (
-	// OWASP-ish Argon2id params for interactive login.
-	memKB   = 64 * 1024
-	timeN   = 1
-	threads = 4
-	keyLen  = 32
-	saltLen = 16
-)
+// Mesh keeps its password policy and one 64 MiB job per process while the
+// shared engine owns PHC parsing, constant-time verification and admission.
+var passwordEngine = password.NewEngine(password.Config{
+	MemoryKB: 64 * 1024, Time: 1, Threads: 4, KeyLen: 32, SaltLen: 16, Slots: 1,
+})
+
+func acquirePasswordWork(ctx context.Context) (func(), error) {
+	return passwordEngine.Acquire(ctx)
+}
 
 // HashPassword returns PHC-like string $argon2id$v=19$m=65536,t=1,p=4$<salt>$<hash>.
 func HashPassword(password string) (string, error) {
+	return HashPasswordContext(context.Background(), password)
+}
+
+// HashPasswordContext can cancel admission; admitted crypto work completes
+// before releasing the shared engine's budget.
+func HashPasswordContext(ctx context.Context, password string) (string, error) {
 	if len(password) < 8 {
 		return "", fmt.Errorf("password too short")
 	}
-	salt := make([]byte, saltLen)
-	if _, err := rand.Read(salt); err != nil {
-		return "", err
-	}
-	hash := argon2.IDKey([]byte(password), salt, timeN, memKB, threads, keyLen)
-	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
-		memKB, timeN, threads,
-		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(hash)), nil
+	return passwordEngine.Hash(ctx, password)
 }
 
-// VerifyPassword parses our own format only (params read from the stored
-// string so future parameter changes keep old hashes verifiable).
+// VerifyPassword preserves existing Mesh Argon2id records. The shared parser
+// requires v19 and rejects records requesting more than 64 MiB of memory.
 func VerifyPassword(encoded, password string) (bool, error) {
-	parts := strings.Split(encoded, "$")
-	if len(parts) != 6 || parts[1] != "argon2id" {
-		return false, fmt.Errorf("unsupported hash format")
-	}
-	m, t, p, err := parseArgon2Params(parts[3])
-	if err != nil {
-		return false, err
-	}
-	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil {
-		return false, err
-	}
-	want, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil {
-		return false, err
-	}
-	// Hard cap decoded material to keep a tampered DB row from forcing huge work.
-	if len(want) < 16 || len(want) > 128 || len(salt) < 8 || len(salt) > 64 || m > 4<<20 || t == 0 || t > 8 || p == 0 || p > 16 {
-		return false, fmt.Errorf("implausible hash parameters")
-	}
-	got := argon2.IDKey([]byte(password), salt, t, m, p, uint32(len(want)))
-	return subtle.ConstantTimeCompare(got, want) == 1, nil
+	return VerifyPasswordContext(context.Background(), encoded, password)
 }
 
-func parseArgon2Params(s string) (m uint32, t uint32, p uint8, err error) {
-	for _, kv := range strings.Split(s, ",") {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok {
-			return 0, 0, 0, fmt.Errorf("bad params %q", s)
-		}
-		n, perr := strconv.ParseUint(v, 10, 32)
-		if perr != nil {
-			return 0, 0, 0, fmt.Errorf("bad param %q", kv)
-		}
-		switch k {
-		case "m":
-			m = uint32(n)
-		case "t":
-			t = uint32(n)
-		case "p":
-			if n > 255 {
-				return 0, 0, 0, fmt.Errorf("bad p")
-			}
-			p = uint8(n)
-		}
-	}
-	if m == 0 || t == 0 || p == 0 {
-		return 0, 0, 0, fmt.Errorf("incomplete params %q", s)
-	}
-	return m, t, p, nil
+func VerifyPasswordContext(ctx context.Context, encoded, password string) (bool, error) {
+	ok, _, err := passwordEngine.Verify(ctx, encoded, password)
+	return ok, err
 }
 
-// DummyHash is a real Argon2id digest of a throwaway password. Verifying
-// against it when the username is unknown keeps login timing uniform so
-// valid usernames cannot be enumerated by response time.
+// Precompute the throwaway digest at startup, as Mesh always has. Unknown
+// users then consume one verification job with the same cancellation budget
+// as real users, including the very first login request.
 var dummyHash = func() string {
 	h, err := HashPassword("meshbridge-dummy-verify-target")
 	if err != nil {
@@ -112,22 +66,22 @@ var dummyHash = func() string {
 
 // DummyVerify burns the same Argon2 work as a real check. Always fails.
 func DummyVerify(password string) {
-	_, _ = VerifyPassword(dummyHash, password)
+	_ = DummyVerifyContext(context.Background(), password)
+}
+
+func DummyVerifyContext(ctx context.Context, password string) error {
+	_, _, err := passwordEngine.Verify(ctx, dummyHash, password)
+	return err
 }
 
 // RandomToken returns base64url random bytes (n bytes of entropy).
 func RandomToken(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return token.Generate(n)
 }
 
 // HashToken returns hex(sha256(token)) for DB storage (never store raw).
-func HashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+func HashToken(raw string) string {
+	return token.Hash(raw)
 }
 
 // ---- Transfer tokens (Controller-signed, 10min, anti-replay) ----

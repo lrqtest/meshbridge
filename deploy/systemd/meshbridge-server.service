@@ -10,6 +10,9 @@ User=meshbridge
 Group=meshbridge
 ExecStart=/usr/local/bin/meshbridge-server --data-dir /var/lib/meshbridge
 EnvironmentFile=-/etc/meshbridge/server.env
+Environment=GOMEMLIMIT=160MiB
+MemoryMax=256M
+CPUQuota=100%
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true

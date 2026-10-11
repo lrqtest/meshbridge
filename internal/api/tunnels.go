@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -36,8 +37,7 @@ func (s *Server) routesTunnels() {
 // requireAdmin gates tunnel-global settings (only admins may flip them).
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, role := s.tokenUser(r); role != "admin" {
-			writeErr(w, 403, "forbidden", "admin only")
+		if !s.requireAdminToken(w, r) {
 			return
 		}
 		next(w, r)
@@ -113,6 +113,9 @@ func (s *Server) handleTunnelSettingsPut(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	if s.Gateway != nil {
+		s.Gateway.ResetSettings()
+	}
 	uid, _ := s.tokenUser(r)
 	_ = audit.Log(r.Context(), s.DB, uid, "tunnel settings updated", "", "", "", fmt.Sprintf("%d keys", len(sets)))
 	s.handleTunnelSettingsGet(w, r)
@@ -161,15 +164,11 @@ func (s *Server) tunnelView(t *tunnel.Tunnel, host string) tunnelView {
 // tokenUser resolves the bearer token to (userID, role). A disabled account
 // loses its tokens immediately, and expired tokens are dead.
 func (s *Server) tokenUser(r *http.Request) (string, string) {
-	raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	var uid, role string
-	var disabled, exp int64
-	err := s.DB.QueryRow(`SELECT u.id,u.role,u.disabled,t.expires_at FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=?`,
-		auth.HashToken(raw)).Scan(&uid, &role, &disabled, &exp)
-	if err != nil || disabled == 1 || (exp != 0 && time.Now().Unix() > exp) {
+	u, ok := s.authenticateBearer(r)
+	if !ok {
 		return "", ""
 	}
-	return uid, role
+	return u.ID, u.Role
 }
 
 // mayManageDevice: admins manage everything; users only their own devices.
@@ -431,6 +430,9 @@ func (s *Server) handleTunnelPatch(w http.ResponseWriter, r *http.Request) {
 	// Config changed: rebuild the cached proxy bundle from fresh DB state.
 	if s.Gateway != nil {
 		s.Gateway.ResetProxy(id)
+		if in.MonthlyQuotaByte != nil {
+			s.Gateway.UpdateQuota(id, *in.MonthlyQuotaByte)
+		}
 	}
 	// Re-enabling resets a quota stop; raising a quota re-arms the warn flag.
 	if status == "active" && t.Status != "active" {
@@ -477,7 +479,14 @@ func (s *Server) handleTunnelDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Gateway != nil {
-		s.Gateway.Forget(id)
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		release, err := s.Gateway.PrepareDelete(ctx, id)
+		if err != nil {
+			writeErr(w, 503, "busy", "tunnel is still draining")
+			return
+		}
+		defer release()
 	}
 	if _, err := s.DB.Exec(`DELETE FROM tunnels WHERE id=?`, id); err != nil {
 		writeErr(w, 500, "db", "delete failed")
@@ -542,6 +551,12 @@ func (s *Server) handleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden", "tunnel not active")
 		return
 	}
+	release, ok := s.Gateway.AcquireAgent()
+	if !ok {
+		writeErr(w, 503, "busy", "agent capacity exhausted")
+		return
+	}
+	defer release()
 	// Token auth (not cookies) governs this endpoint; no Origin restriction.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
@@ -551,10 +566,12 @@ func (s *Server) handleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 	// which the server cancels the moment the handler returns. A background
 	// ctx + blocking on the session keeps the upgrade alive until the agent
 	// disconnects (the gateway's watcher detaches it from the registry).
-	netConn := websocket.NetConn(context.Background(), c, websocket.MessageBinary)
+	netConn := &agentSocket{Conn: websocket.NetConn(context.Background(), c, websocket.MessageBinary), closeNow: c.CloseNow}
 	cfg := yamux.DefaultConfig()
-	cfg.AcceptBacklog = 64
+	cfg.AcceptBacklog = 1
 	cfg.KeepAliveInterval = 20 * time.Second
+	cfg.StreamCloseTimeout = 30 * time.Second
+	cfg.StreamOpenTimeout = 10 * time.Second
 	sess, err := yamux.Client(netConn, cfg)
 	if err != nil {
 		netConn.Close()
@@ -563,6 +580,20 @@ func (s *Server) handleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 	_, _ = s.DB.Exec(`UPDATE device_tokens SET last_used=? WHERE token_hash=?`, time.Now().Unix(), hash)
 	s.Gateway.Attach(t.ID, sess)
 	<-sess.CloseChan()
+}
+
+// Controller-owned session shutdown must not wait for 32 sequential WebSocket
+// close handshakes from unresponsive agents.
+type agentSocket struct {
+	net.Conn
+	closeNow func() error
+	once     sync.Once
+	err      error
+}
+
+func (c *agentSocket) Close() error {
+	c.once.Do(func() { c.err = c.closeNow(); _ = c.Conn.Close() })
+	return c.err
 }
 
 // handleTunnelCertAsk answers Caddy's on_demand_tls ask endpoint: 200 only

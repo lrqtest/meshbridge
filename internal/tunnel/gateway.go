@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -28,6 +27,7 @@ import (
 // GatewayConfig is wired in cmd/meshbridge-server from env + master key.
 type GatewayConfig struct {
 	DB         *sql.DB
+	SSOEnabled bool   // force opaque-origin isolation on every path tunnel
 	Secret     []byte // gate-cookie HMAC key (derive from master key)
 	BaseURL    string // e.g. https://mineai.top — used for display URLs
 	BaseDomain string // e.g. mineai.top — enables subdomain mode ("" = off)
@@ -38,7 +38,7 @@ type GatewayConfig struct {
 
 const (
 	maxConcurrentPerTunnel = 16
-	maxConcurrentGlobal    = 256
+	maxConcurrentGlobal    = 128
 	defaultRatePerMin      = 240
 	// Bodies over this are refused even when the per-tunnel cap is higher.
 	hardBodyCap = 1 << 30
@@ -57,19 +57,35 @@ type Gateway struct {
 	online map[string]bool // last announced state (audit dedup)
 	lastEv map[string]time.Time
 
-	gsem chan struct{} // global concurrent visitor-request bound
+	gsem        chan struct{} // global concurrent visitor-request bound
+	admissionMu sync.Mutex
+	admission   map[string]chan struct{} // only tunnels with active requests
+	jobs        map[string]map[*requestMeter]context.CancelFunc
+	removing    map[string]int
 
 	keys  *attemptLimiter
 	rate  *rateLimiter
 	proxy sync.Map // tunnelID -> *tunProxy
 
-	setMu sync.Mutex
-	sets  map[string]setEntry
+	setMu        sync.Mutex
+	sets         map[string]setEntry
+	setVersion   uint64
+	meter        *usageMeter
+	meterStart   sync.Once
+	meterDone    chan struct{}
+	meterCancel  context.CancelFunc
+	openMu       sync.Mutex
+	pendingOpens map[*yamux.Session]int
+	retained     map[*yamux.Session]struct{}
+	agentSlots   chan struct{}
+	closing      bool
+	sessionWG    sync.WaitGroup
+	shutdownOnce sync.Once
+	shutdownDone chan struct{}
 }
 
 type tunProxy struct {
-	rp  *httputil.ReverseProxy
-	sem chan struct{}
+	rp *httputil.ReverseProxy
 }
 
 type setEntry struct {
@@ -83,7 +99,7 @@ func NewGateway(cfg GatewayConfig) *Gateway {
 	if ht <= 0 {
 		ht = responseHeaderTimeout
 	}
-	return &Gateway{
+	g := &Gateway{
 		cfg:           cfg,
 		headerTimeout: ht,
 		db:            cfg.DB,
@@ -91,36 +107,59 @@ func NewGateway(cfg GatewayConfig) *Gateway {
 		online:        make(map[string]bool),
 		lastEv:        make(map[string]time.Time),
 		gsem:          make(chan struct{}, maxConcurrentGlobal),
+		admission:     make(map[string]chan struct{}),
+		jobs:          make(map[string]map[*requestMeter]context.CancelFunc),
+		removing:      make(map[string]int),
 		keys:          newAttemptLimiter(KeyAttemptLimit, KeyAttemptWindow),
 		rate:          newRateLimiter(),
 		sets:          make(map[string]setEntry),
+		meter:         newUsageMeter(cfg.DB),
+		pendingOpens:  make(map[*yamux.Session]int),
+		retained:      make(map[*yamux.Session]struct{}),
+		agentSlots:    make(chan struct{}, 32),
+		shutdownDone:  make(chan struct{}),
 	}
+	g.meter.onResult = g.meterResult
+	return g
 }
 
 // ---- settings (30s cache; reads would otherwise hit SQLite per request) ----
 
 func (g *Gateway) setting(key, def string) string {
-	g.setMu.Lock()
-	if e, ok := g.sets[key]; ok && time.Now().Before(e.exp) {
-		g.setMu.Unlock()
-		return e.val
-	}
-	g.setMu.Unlock()
-	val := def
-	if g.db != nil {
-		if v, err := g.getSettingDB(key); err == nil && v != "" {
-			val = v
+	for {
+		g.setMu.Lock()
+		if e, ok := g.sets[key]; ok && time.Now().Before(e.exp) {
+			g.setMu.Unlock()
+			return e.val
 		}
+		version := g.setVersion
+		g.setMu.Unlock()
+		val := def
+		if g.db != nil {
+			if v, err := g.getSettingDB(key); err == nil && v != "" {
+				val = v
+			} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				g.meter.mu.Lock()
+				g.meter.failure = err
+				g.meter.mu.Unlock()
+			}
+		}
+		g.setMu.Lock()
+		if version != g.setVersion {
+			g.setMu.Unlock()
+			continue
+		}
+		g.sets[key] = setEntry{val, time.Now().Add(30 * time.Second)}
+		g.setMu.Unlock()
+		return val
 	}
-	g.setMu.Lock()
-	g.sets[key] = setEntry{val, time.Now().Add(30 * time.Second)}
-	g.setMu.Unlock()
-	return val
 }
 
 func (g *Gateway) getSettingDB(key string) (string, error) {
 	var v string
-	err := g.db.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&v)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := g.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key=?`, key).Scan(&v)
 	return v, err
 }
 
@@ -133,7 +172,33 @@ func (g *Gateway) BaseDomain() string { return g.cfg.BaseDomain }
 // Attach registers a fresh agent session, replacing any previous one (an
 // agent reconnect races its own dead connection).
 func (g *Gateway) Attach(tunnelID string, sess *yamux.Session) {
+	// A handshake can complete after PATCH/delete. Serialize its final row
+	// validation and registration with the removal guard, so it either gets
+	// closed by the drain or is rejected after the row has gone away.
+	g.admissionMu.Lock()
+	if g.removing[tunnelID] > 0 {
+		g.admissionMu.Unlock()
+		_ = sess.Close()
+		return
+	}
+	if g.db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		var active int
+		err := g.db.QueryRowContext(ctx, `SELECT 1 FROM tunnels WHERE id=? AND status='active'`, tunnelID).Scan(&active)
+		cancel()
+		if err != nil {
+			g.admissionMu.Unlock()
+			_ = sess.Close()
+			return
+		}
+	}
 	g.mu.Lock()
+	if g.closing || !g.MeterReady() {
+		g.mu.Unlock()
+		g.admissionMu.Unlock()
+		_ = sess.Close()
+		return
+	}
 	if old, ok := g.sess[tunnelID]; ok && old != sess {
 		go old.Close()
 	}
@@ -141,20 +206,91 @@ func (g *Gateway) Attach(tunnelID string, sess *yamux.Session) {
 	wasOnline := g.online[tunnelID]
 	g.online[tunnelID] = true
 	last := g.lastEv[tunnelID]
+	g.sessionWG.Add(2)
 	g.mu.Unlock()
+	g.admissionMu.Unlock()
 	if !wasOnline || time.Since(last) > auditFlapWindow {
 		g.logOnline(tunnelID, true)
 	}
 	go func() {
+		defer g.sessionWG.Done()
 		<-sess.CloseChan()
 		g.mu.Lock()
 		if g.sess[tunnelID] == sess {
 			delete(g.sess, tunnelID)
+			g.online[tunnelID] = false
 		}
-		g.online[tunnelID] = false
 		g.mu.Unlock()
 		g.logOnline(tunnelID, false)
 	}()
+	go func() {
+		defer g.sessionWG.Done()
+		// Agents only accept streams. A peer opening an inbound stream is
+		// outside the protocol and cannot retain a backlog on the controller.
+		if stream, err := sess.AcceptStream(); err == nil {
+			_ = stream.Close()
+			_ = sess.Close()
+		}
+	}()
+}
+
+// AcquireAgent counts pending handshakes as well as live/replaced sessions.
+func (g *Gateway) AcquireAgent() (func(), bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.closing || !g.MeterReady() {
+		return nil, false
+	}
+	select {
+	case g.agentSlots <- struct{}{}:
+		var once sync.Once
+		return func() { once.Do(func() { <-g.agentSlots }) }, true
+	default:
+		return nil, false
+	}
+}
+
+// Open reservations include pending opens and FIN-waiting yamux streams.
+// A hostile peer can temporarily saturate capacity until the 30s close timer
+// removes its streams; retries cannot allocate another unbounded stream set.
+func (g *Gateway) openStream(ctx context.Context, sess *yamux.Session) (*yamux.Stream, error) {
+	g.openMu.Lock()
+	if sess.IsClosed() {
+		g.openMu.Unlock()
+		return nil, ErrAgentOffline
+	}
+	g.retained[sess] = struct{}{}
+	total := 0
+	for s := range g.retained {
+		n := s.NumStreams() + g.pendingOpens[s]
+		if s.IsClosed() && g.pendingOpens[s] == 0 {
+			delete(g.retained, s)
+			continue
+		}
+		total += n
+	}
+	if sess.NumStreams()+g.pendingOpens[sess] >= 32 || total >= 128 {
+		g.openMu.Unlock()
+		return nil, ErrTunnelBusy
+	}
+	g.pendingOpens[sess]++
+	g.openMu.Unlock()
+	stop := context.AfterFunc(ctx, func() { _ = sess.Close() })
+	s, err := sess.OpenStream()
+	stop()
+	g.openMu.Lock()
+	g.pendingOpens[sess]--
+	if g.pendingOpens[sess] == 0 {
+		delete(g.pendingOpens, sess)
+	}
+	g.openMu.Unlock()
+	if ctx.Err() != nil {
+		if s != nil {
+			_ = s.Close()
+		}
+		return nil, ctx.Err()
+	}
+	return s, err
 }
 
 func (g *Gateway) logOnline(tunnelID string, up bool) {
@@ -179,6 +315,7 @@ func (g *Gateway) logOnline(tunnelID string, up bool) {
 
 // Kill force-closes the agent session (used on disable/delete).
 func (g *Gateway) Kill(tunnelID string) {
+	g.cancelJobs(tunnelID)
 	g.mu.Lock()
 	sess := g.sess[tunnelID]
 	delete(g.sess, tunnelID)
@@ -210,7 +347,11 @@ func (g *Gateway) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__mb/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"live":` + strconv.Itoa(g.OnlineCount()) + `}`))
+		ready := g.MeterReady()
+		if !ready {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		_, _ = w.Write([]byte(`{"ok":` + strconv.FormatBool(ready) + `,"meter_degraded":` + strconv.FormatBool(!ready) + `,"live":` + strconv.Itoa(g.OnlineCount()) + `}`))
 	})
 	mux.HandleFunc("/t/", g.servePathMode)
 	mux.HandleFunc("/t", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
@@ -463,6 +604,12 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, t *Tunnel
 		g.errorPage(w, r, http.StatusServiceUnavailable, "offline")
 		return
 	}
+	release, ok := g.admitTunnel(t.ID)
+	if !ok {
+		g.errorPage(w, r, http.StatusServiceUnavailable, "busy")
+		return
+	}
+	defer release()
 	// Global bound protects the control VPS from many-tunnel fan-out.
 	select {
 	case g.gsem <- struct{}{}:
@@ -472,15 +619,38 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, t *Tunnel
 		return
 	}
 
-	var inBytes, outBytes int64
+	meter := g.meter.begin(t)
+	defer func() { stopped, err := meter.close(); g.meterResult(stopped, err) }()
+	requestCtx, cancel := context.WithCancel(r.Context())
+	stopReadDeadline := context.AfterFunc(requestCtx, func() {
+		controller := http.NewResponseController(w)
+		_ = controller.SetReadDeadline(time.Now())
+		_ = controller.SetWriteDeadline(time.Now())
+	})
+	defer func() { stopReadDeadline(); cancel() }()
+	r = r.WithContext(requestCtx)
+	g.admissionMu.Lock()
+	if g.jobs[t.ID] == nil {
+		g.jobs[t.ID] = make(map[*requestMeter]context.CancelFunc)
+	}
+	g.jobs[t.ID][meter] = cancel
+	g.admissionMu.Unlock()
+	defer func() {
+		g.admissionMu.Lock()
+		delete(g.jobs[t.ID], meter)
+		if len(g.jobs[t.ID]) == 0 {
+			delete(g.jobs, t.ID)
+		}
+		g.admissionMu.Unlock()
+	}()
 	limit := t.MaxRequestBytes
 	if limit <= 0 || limit > hardBodyCap {
 		limit = hardBodyCap
 	}
 	if r.Body != nil {
-		r.Body = http.MaxBytesReader(w, &countReader{r: r.Body, n: &inBytes}, limit)
+		r.Body = http.MaxBytesReader(w, &countReader{r: r.Body, meter: meter, ctx: r.Context(), g: g}, limit)
 	}
-	cw := &countWriter{ResponseWriter: w, n: &outBytes, g: g, t: t}
+	cw := &countWriter{ResponseWriter: w, meter: meter, ctx: r.Context(), g: g}
 
 	proxy := g.proxyFor(t)
 	ctx := context.WithValue(r.Context(), ctxTunnel{}, t)
@@ -490,9 +660,40 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, t *Tunnel
 	}
 	proxy.ServeHTTP(cw, r.WithContext(ctx))
 
-	// atomic reads: hijacked upgrade conns may still be counting in the
-	// background after ServeHTTP returns (their close handler records the rest).
-	g.recordUsage(t, atomic.LoadInt64(&inBytes), atomic.LoadInt64(&outBytes))
+}
+
+// Admission is held until ReverseProxy finishes the body or bidirectional
+// upgrade copy, not merely until response headers arrive. It is independent
+// of proxy configuration caches, so PATCH/reset cannot create a second budget.
+func (g *Gateway) admitTunnel(id string) (func(), bool) {
+	g.admissionMu.Lock()
+	if g.removing[id] > 0 {
+		g.admissionMu.Unlock()
+		return nil, false
+	}
+	sem := g.admission[id]
+	if sem == nil {
+		sem = make(chan struct{}, maxConcurrentPerTunnel)
+		g.admission[id] = sem
+	}
+	select {
+	case sem <- struct{}{}:
+		g.admissionMu.Unlock()
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				g.admissionMu.Lock()
+				<-sem
+				if len(sem) == 0 {
+					delete(g.admission, id)
+				}
+				g.admissionMu.Unlock()
+			})
+		}, true
+	default:
+		g.admissionMu.Unlock()
+		return nil, false
+	}
 }
 
 // Forget drops all runtime state for a tunnel (on delete or disable).
@@ -505,6 +706,76 @@ func (g *Gateway) Forget(tunnelID string) {
 // from fresh DB state (after config PATCHes; keeps the live agent link).
 func (g *Gateway) ResetProxy(tunnelID string) { g.proxy.Delete(tunnelID) }
 
+func (g *Gateway) UpdateQuota(tunnelID string, quota int64) {
+	g.meter.mu.Lock()
+	if g.db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := g.db.QueryRowContext(ctx, `SELECT monthly_quota_bytes FROM tunnels WHERE id=?`, tunnelID).Scan(&quota)
+		cancel()
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				g.meter.failure = err
+			}
+			g.meter.mu.Unlock()
+			if !errors.Is(err, sql.ErrNoRows) {
+				g.meterResult(nil, ErrMeterUnavailable)
+			}
+			return
+		}
+	}
+	// PATCH callbacks can arrive in a different order from SQLite commits.
+	// Reading under the meter lock makes every callback use the current row.
+	for k, e := range g.meter.entries {
+		if k.id == tunnelID {
+			e.quota = quota
+		}
+	}
+	g.meter.mu.Unlock()
+}
+
+// Stop admissions and drain final meter writes before the existing cascading
+// delete. Otherwise a late body write would violate the usage foreign key and
+// degrade every tunnel after a legitimate owner delete.
+func (g *Gateway) PrepareDelete(ctx context.Context, id string) (func(), error) {
+	g.admissionMu.Lock()
+	g.removing[id]++
+	g.admissionMu.Unlock()
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			g.admissionMu.Lock()
+			g.removing[id]--
+			if g.removing[id] == 0 {
+				delete(g.removing, id)
+			}
+			g.admissionMu.Unlock()
+		})
+	}
+	g.Forget(id)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		g.admissionMu.Lock()
+		drained := len(g.admission[id]) == 0
+		g.admissionMu.Unlock()
+		if drained {
+			stopped, err := g.meter.flush(ctx)
+			g.meterResult(stopped, err)
+			if err != nil {
+				release()
+				return nil, err
+			}
+			return release, nil
+		}
+		select {
+		case <-ctx.Done():
+			release()
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 type (
 	ctxTunnel    struct{}
 	ctxStripped  struct{}
@@ -516,15 +787,15 @@ func (g *Gateway) proxyFor(t *Tunnel) *httputil.ReverseProxy {
 	if v, ok := g.proxy.Load(t.ID); ok {
 		return v.(*tunProxy).rp
 	}
-	sem := make(chan struct{}, maxConcurrentPerTunnel)
-	trip := &yamuxTripper{g: g, tun: t, sem: sem}
+	trip := &yamuxTripper{g: g, tun: t}
 	rp := &httputil.ReverseProxy{
 		Transport:     trip,
 		FlushInterval: -1, // SSE / streamed responses flush immediately
 		Rewrite:       g.rewrite,
 		ModifyResponse: func(resp *http.Response) error {
 			rctx := resp.Request.Context()
-			if pathMode, _ := rctx.Value(ctxPathMode{}).(bool); pathMode && t.Sandbox {
+			current, _ := rctx.Value(ctxTunnel{}).(*Tunnel)
+			if pathMode, _ := rctx.Value(ctxPathMode{}).(bool); pathMode && (g.cfg.SSOEnabled || current != nil && current.Sandbox) {
 				// Path mode shares the browser origin with the console SPA:
 				// any tunneled page could otherwise read the console's
 				// localStorage (its API token) and call /api/v1 directly.
@@ -561,9 +832,9 @@ func (g *Gateway) proxyFor(t *Tunnel) *httputil.ReverseProxy {
 			}
 		},
 	}
-	bundle := &tunProxy{rp: rp, sem: sem}
-	g.proxy.Store(t.ID, bundle)
-	return rp
+	bundle := &tunProxy{rp: rp}
+	actual, _ := g.proxy.LoadOrStore(t.ID, bundle)
+	return actual.(*tunProxy).rp
 }
 
 // rewrite targets the intranet service and applies header hygiene: inbound
@@ -604,52 +875,146 @@ func forwardedProto(r *http.Request) string {
 
 // ---- usage accounting + quotas ----
 
-func (g *Gateway) recordUsage(t *Tunnel, in, out int64) {
-	if g.db == nil || (in <= 0 && out <= 0) {
-		return
+func (g *Gateway) globalBudget() int64 {
+	limit, err := strconv.ParseInt(g.setting("tunnels_global_monthly_bytes", "21474836480"), 10, 64)
+	if err != nil || limit <= 0 {
+		return 0
 	}
-	month := MonthKey(time.Now())
-	_, _ = g.db.Exec(`INSERT INTO tunnel_usage(tunnel_id,month,bytes_in,bytes_out) VALUES(?,?,?,?)
-		ON CONFLICT(tunnel_id,month) DO UPDATE SET bytes_in=bytes_in+excluded.bytes_in, bytes_out=bytes_out+excluded.bytes_out`,
-		t.ID, month, in, out)
-	var inSum, outSum int64
-	var warned int
-	_ = g.db.QueryRow(`SELECT bytes_in,bytes_out,warned FROM tunnel_usage WHERE tunnel_id=? AND month=?`, t.ID, month).
-		Scan(&inSum, &outSum, &warned)
-	total := inSum + outSum
-	if t.MonthlyQuotaByte > 0 {
-		if total >= t.MonthlyQuotaByte {
-			_, _ = g.db.Exec(`UPDATE tunnels SET status='quota_exceeded', updated_at=? WHERE id=?`, time.Now().Unix(), t.ID)
-			g.proxy.Delete(t.ID)
-			_ = audit.Log(context.Background(), g.db, "gateway", "tunnel quota exceeded", "", t.ID, "",
-				strconv.FormatInt(total, 10)+" bytes")
-			g.Kill(t.ID)
-			return
-		}
-		if warned == 0 && total >= t.MonthlyQuotaByte*8/10 {
-			_, _ = g.db.Exec(`UPDATE tunnel_usage SET warned=1 WHERE tunnel_id=? AND month=?`, t.ID, month)
-			_ = audit.Log(context.Background(), g.db, "gateway", "tunnel quota warning", "", t.ID, "",
-				"80% of "+strconv.FormatInt(t.MonthlyQuotaByte, 10))
-		}
-	}
-	if g.globalOverBudget() {
-		_ = audit.Log(context.Background(), g.db, "gateway", "tunnel global budget exceeded", "", "", "", MonthKey(time.Now()))
-	}
+	return limit
 }
 
 func (g *Gateway) globalOverBudget() bool {
 	if g.db == nil {
 		return false
 	}
-	limit, err := strconv.ParseInt(g.setting("tunnels_global_monthly_bytes", "21474836480"), 10, 64)
-	if err != nil || limit <= 0 {
-		return false
+	limit := g.globalBudget()
+	m := g.meter
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failure != nil {
+		return true
 	}
-	var total sql.NullInt64
-	if err := g.db.QueryRow(`SELECT COALESCE(SUM(bytes_in+bytes_out),0) FROM tunnel_usage WHERE month=?`, MonthKey(time.Now())).Scan(&total); err != nil {
-		return false
+	month := MonthKey(m.now())
+	b := m.months[month]
+	if b == nil {
+		b = &monthBalance{}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := g.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes_in+bytes_out),0) FROM tunnel_usage WHERE month=?`, month).Scan(&b.total); err != nil {
+			m.failure = err
+			return true
+		}
+		m.months[month] = b
 	}
-	return total.Int64 >= limit
+	return limit > 0 && b.total >= limit
+}
+
+func (g *Gateway) MeterReady() bool { return g.meter.ready() }
+
+func (g *Gateway) meterResult(stopped []string, err error) {
+	if errors.Is(err, ErrMeterUnavailable) || errors.Is(err, ErrGlobalQuota) {
+		g.CloseSessions()
+		return
+	}
+	for _, id := range stopped {
+		g.proxy.Delete(id)
+		g.Kill(id)
+	}
+}
+
+// StartMeter is owned by the server lifetime. Tests without a background
+// lifecycle still flush on threshold/final Close, without leaking goroutines.
+func (g *Gateway) StartMeter(ctx context.Context) {
+	g.meterStart.Do(func() {
+		workerCtx, cancel := context.WithCancel(ctx)
+		g.meterCancel = cancel
+		g.meterDone = make(chan struct{})
+		go func() {
+			defer close(g.meterDone)
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-workerCtx.Done():
+					return
+				case <-ticker.C:
+					stopped, err := g.meter.flush(workerCtx)
+					g.meterResult(stopped, err)
+				}
+			}
+		}()
+	})
+}
+
+func (g *Gateway) CloseSessions() {
+	g.cancelJobs("")
+	g.mu.Lock()
+	sessions := make([]*yamux.Session, 0, len(g.sess))
+	for id, s := range g.sess {
+		sessions = append(sessions, s)
+		delete(g.sess, id)
+		g.online[id] = false
+	}
+	g.mu.Unlock()
+	for _, s := range sessions {
+		_ = s.Close()
+	}
+}
+
+func (g *Gateway) cancelJobs(id string) {
+	g.admissionMu.Lock()
+	var cancels []context.CancelFunc
+	for tunnel, jobs := range g.jobs {
+		if id == "" || id == tunnel {
+			for _, cancel := range jobs {
+				cancels = append(cancels, cancel)
+			}
+		}
+	}
+	g.admissionMu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
+func (g *Gateway) ShutdownSessions(ctx context.Context) error {
+	g.shutdownOnce.Do(func() {
+		go func() {
+			g.mu.Lock()
+			g.closing = true
+			g.mu.Unlock()
+			g.CloseSessions()
+			g.sessionWG.Wait()
+			close(g.shutdownDone)
+		}()
+	})
+	select {
+	case <-g.shutdownDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (g *Gateway) StopMeter(ctx context.Context) error {
+	if g.meterCancel != nil {
+		g.meterCancel()
+		select {
+		case <-g.meterDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	stopped, err := g.meter.flush(ctx)
+	g.meterResult(stopped, err)
+	return err
+}
+
+func (g *Gateway) ResetSettings() {
+	g.setMu.Lock()
+	g.setVersion++
+	g.sets = make(map[string]setEntry)
+	g.setMu.Unlock()
 }
 
 // ---- limiters ----
@@ -812,7 +1177,7 @@ func pageCopy(kind string) (heading, lede, fine string) {
 	case "disabled":
 		return "Tunnel closed", "This tunnel has been disabled by its owner.", ""
 	case "quota":
-		return "Monthly limit reached", "This tunnel reached its monthly traffic limit.", "The owner can raise the quota or wait for next month."
+		return "Monthly limit reached", "This tunnel reached its monthly traffic limit.", "The owner can raise the quota or manually re-enable it in a new month."
 	case "global_quota":
 		return "Server limit reached", "All tunnels on this server reached the shared monthly traffic limit.", "Please come back later."
 	case "offline":

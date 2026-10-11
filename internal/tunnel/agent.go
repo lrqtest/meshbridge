@@ -179,6 +179,7 @@ func yamuxServerCfg() *yamux.Config {
 	cfg := yamux.DefaultConfig()
 	cfg.AcceptBacklog = 32
 	cfg.KeepAliveInterval = 20 * time.Second
+	cfg.StreamCloseTimeout = 30 * time.Second
 	return cfg
 }
 

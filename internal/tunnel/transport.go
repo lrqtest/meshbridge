@@ -6,12 +6,13 @@ package tunnel
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
@@ -33,24 +34,24 @@ var responseHeaderTimeout = 30 * time.Minute
 type yamuxTripper struct {
 	g   *Gateway
 	tun *Tunnel
-	sem chan struct{} // per-tunnel concurrency bound
 }
 
 func (t *yamuxTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	select {
-	case t.sem <- struct{}{}:
-		defer func() { <-t.sem }()
-	default:
-		return nil, ErrTunnelBusy
-	}
 	sess := t.g.session(t.tun.ID)
 	if sess == nil {
 		return nil, ErrAgentOffline
 	}
-	stream, err := sess.OpenStream()
+	rawStream, err := t.g.openStream(req.Context(), sess)
 	if err != nil {
+		if errors.Is(err, ErrTunnelBusy) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("%w: %v", ErrAgentOffline, err)
 	}
+	stream := &interruptibleStream{Conn: rawStream}
+	// Cancellation must also reach a stalled response body AFTER RoundTrip
+	// returns its headers. Without this, abandoned SSE reads keep proxy slots.
+	stopCancel := context.AfterFunc(req.Context(), func() { _ = stream.Close() })
 
 	type result struct {
 		resp *http.Response
@@ -80,7 +81,7 @@ func (t *yamuxTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		// framing (chunked / Content-Length). The raw stream is layered in
 		// for Close (connection teardown) and for Write, which ReverseProxy
 		// uses for the bidirectional copy after a 101 upgrade.
-		body := &wrapBody{r: resp.Body, s: stream}
+		body := &wrapBody{r: resp.Body, s: stream, stopCancel: stopCancel}
 		if resp.StatusCode == http.StatusSwitchingProtocols {
 			// After a 101 there is no framing: read the raw stream (the
 			// bufio may already hold early upgrade data).
@@ -92,24 +93,75 @@ func (t *yamuxTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	select {
 	case r := <-ch:
 		if r.err != nil {
+			stopCancel()
 			stream.Close()
 			return nil, r.err
 		}
 		// Body / upgraded connection may stream for as long as it likes.
-		_ = stream.SetDeadline(time.Time{})
+		if err := stream.clearForBody(req.Context()); err != nil {
+			_ = r.resp.Body.Close()
+			return nil, err
+		}
 		return r.resp, nil
 	case <-req.Context().Done():
+		stopCancel()
 		stream.Close() // unblocks the goroutine; buffered chan lets it exit
 		return nil, req.Context().Err()
 	}
+}
+
+// yamux.Close sends FIN but permits further reads. Force pending reads and
+// writes to stop before sending FIN, and serialize later deadline changes so
+// header completion cannot restore an open-ended read after cancellation.
+type interruptibleStream struct {
+	net.Conn
+	mu          sync.Mutex
+	interrupted bool
+	once        sync.Once
+	closeErr    error
+}
+
+func (s *interruptibleStream) SetReadDeadline(deadline time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.interrupted {
+		return nil
+	}
+	return s.Conn.SetReadDeadline(deadline)
+}
+
+func (s *interruptibleStream) clearForBody(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.interrupted {
+		return net.ErrClosed
+	}
+	return s.Conn.SetDeadline(time.Time{})
+}
+
+func (s *interruptibleStream) Close() error {
+	s.once.Do(func() {
+		s.mu.Lock()
+		s.interrupted = true
+		_ = s.Conn.SetDeadline(time.Now())
+		s.mu.Unlock()
+		s.closeErr = s.Conn.Close()
+	})
+	return s.closeErr
 }
 
 // wrapBody pairs the framing-aware decoder from http.ReadResponse with the
 // raw yamux stream. It implements io.ReadWriteCloser so WebSocket (101)
 // upgrades are copied bidirectionally by httputil.ReverseProxy.
 type wrapBody struct {
-	r io.Reader // ReadResponse's body (decoded)
-	s io.ReadWriteCloser
+	r          io.Reader // ReadResponse's body (decoded)
+	s          io.ReadWriteCloser
+	stopCancel func() bool
+	once       sync.Once
+	closeErr   error
 }
 
 func (b *wrapBody) Read(p []byte) (int, error) { return b.r.Read(p) }
@@ -117,26 +169,32 @@ func (b *wrapBody) Write(p []byte) (int, error) {
 	return b.s.Write(p) // only used after a 101 switch
 }
 func (b *wrapBody) Close() error {
-	if c, ok := b.r.(io.Closer); ok {
-		_ = c.Close()
-	}
-	return b.s.Close()
+	b.once.Do(func() {
+		if b.stopCancel != nil {
+			b.stopCancel()
+		}
+		// Close the stream before the framing decoder: the decoder otherwise
+		// drains a never-ending response and never releases the connection.
+		b.closeErr = b.s.Close()
+		if c, ok := b.r.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	return b.closeErr
 }
 
 // ---- byte counters (usage accounting) ----
 
 // countReader counts request body bytes as they are consumed.
 type countReader struct {
-	r io.ReadCloser
-	n *int64
+	r     io.ReadCloser
+	meter *requestMeter
+	ctx   context.Context
+	g     *Gateway
 }
 
 func (c *countReader) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	if n > 0 {
-		atomic.AddInt64(c.n, int64(n))
-	}
-	return n, err
+	return c.meter.read(c.ctx, p, c.r.Read, c.g.globalBudget())
 }
 
 func (c *countReader) Close() error { return c.r.Close() }
@@ -145,17 +203,13 @@ func (c *countReader) Close() error { return c.r.Close() }
 // Hijack (needed for SSE and upgrades) while counting response bytes.
 type countWriter struct {
 	http.ResponseWriter
-	n *int64
-	g *Gateway // set when hijacked traffic must be recorded on close
-	t *Tunnel
+	meter *requestMeter
+	ctx   context.Context
+	g     *Gateway
 }
 
 func (c *countWriter) Write(p []byte) (int, error) {
-	n, err := c.ResponseWriter.Write(p)
-	if n > 0 {
-		atomic.AddInt64(c.n, int64(n))
-	}
-	return n, err
+	return c.meter.write(c.ctx, p, c.ResponseWriter.Write, c.g.globalBudget())
 }
 
 func (c *countWriter) Flush() {
@@ -176,36 +230,43 @@ func (c *countWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if c.g == nil || c.t == nil {
-		return &countConn{Conn: conn, n: c.n}, rw, nil
+	if err := rw.Flush(); err != nil {
+		_ = conn.Close()
+		return nil, nil, err
 	}
-	return &countConn{Conn: conn, n: c.n, base: atomic.LoadInt64(c.n), g: c.g, t: c.t}, rw, nil
+	// The server reader may already contain upgraded bytes read with the HTTP
+	// headers. Reading it through countConn counts that prefix once, then all
+	// subsequent socket reads; ReverseProxy copies directly from the conn.
+	cc := &countConn{Conn: conn, reader: rw.Reader, meter: c.meter, ctx: c.ctx, g: c.g}
+	return cc, bufio.NewReadWriter(bufio.NewReader(cc), bufio.NewWriter(cc)), nil
 }
 
 type countConn struct {
 	net.Conn
-	n    *int64
-	base int64    // bytes already recorded before the hijack
-	g    *Gateway // nil in tests: count only
-	t    *Tunnel
+	reader   io.Reader
+	meter    *requestMeter
+	ctx      context.Context
+	g        *Gateway
+	once     sync.Once
+	closeErr error
+}
+
+func (c *countConn) Read(p []byte) (int, error) {
+	return c.meter.read(c.ctx, p, c.reader.Read, c.g.globalBudget())
 }
 
 func (c *countConn) Write(p []byte) (int, error) {
-	n, err := c.Conn.Write(p)
-	if n > 0 {
-		atomic.AddInt64(c.n, int64(n))
-	}
-	return n, err
+	return c.meter.write(c.ctx, p, c.Conn.Write, c.g.globalBudget())
 }
 
 func (c *countConn) Close() error {
-	err := c.Conn.Close()
-	if c.g != nil && c.t != nil {
-		if delta := atomic.LoadInt64(c.n) - c.base; delta > 0 {
-			c.g.recordUsage(c.t, 0, delta)
-		}
-	}
-	return err
+	c.once.Do(func() {
+		_ = c.Conn.SetDeadline(time.Now())
+		c.closeErr = c.Conn.Close()
+		stopped, err := c.meter.close()
+		c.g.meterResult(stopped, err)
+	})
+	return c.closeErr
 }
 
 var _ http.RoundTripper = (*yamuxTripper)(nil)

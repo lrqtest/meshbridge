@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -10,6 +11,9 @@ func TestPasswordRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.HasPrefix(h, "$argon2id$v=19$m=65536,t=1,p=4$") {
+		t.Fatalf("Mesh hash strength changed: %s", h)
+	}
 	ok, err := VerifyPassword(h, "correct-horse-123")
 	if err != nil || !ok {
 		t.Fatalf("verify failed: %v %v", ok, err)
@@ -17,6 +21,15 @@ func TestPasswordRoundtrip(t *testing.T) {
 	ok, _ = VerifyPassword(h, "wrong")
 	if ok {
 		t.Fatalf("wrong password accepted")
+	}
+}
+
+func TestVerifyExistingMeshPasswordRecord(t *testing.T) {
+	// Fixed PHC fixture from Mesh's original Argon2id implementation. A
+	// shared-engine migration must validate it without rewriting the record.
+	const record = "$argon2id$v=19$m=65536,t=1,p=4$MDEyMzQ1Njc4OWFiY2RlZg$3xo/ddAe2JLjXpAVM8Yw7hhS85eoekDHQ3uzV4EuwZo"
+	if ok, err := VerifyPassword(record, "legacy-mesh-password"); err != nil || !ok {
+		t.Fatalf("existing record rejected: %v %v", ok, err)
 	}
 }
 
@@ -64,6 +77,8 @@ func TestVerifyPasswordRejectsImplausibleParams(t *testing.T) {
 	for _, bad := range []string{
 		"$argon2id$v=19$m=1,t=0,p=0$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA",
 		"$argon2id$v=19$m=999999999,t=99,p=99$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA",
+		"$argon2id$v=19$m=65537,t=1,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA",
+		"$argon2id$v=16$m=65536,t=1,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA",
 		"$bcrypt$v=1$x$y",
 	} {
 		if _, err := VerifyPassword(bad, "x"); err == nil {
