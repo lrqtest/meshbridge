@@ -9,6 +9,8 @@ const PLATFORM_URL = "https://mineai.top", PROJECT_URL = "https://meshbridge.min
 const surfaces = {
   platform: { kind: "platform", split: true, platformURL: PLATFORM_URL, projectURL: PROJECT_URL },
   project: { kind: "project", split: true, platformURL: PLATFORM_URL, projectURL: PROJECT_URL },
+  // the production shape: the platform signs people in to the project (one login)
+  oneLogin: { kind: "project", split: true, sso: true, platformURL: PLATFORM_URL, projectURL: PROJECT_URL },
   standalone: { kind: "project", split: false, platformURL: "", projectURL: "" },
 };
 function facts({ setup = false, session = "none", fault = null } = {}) {
@@ -107,6 +109,19 @@ const plan = (surface, hash, f = {}, extra = {}) => { const fx = facts(f); retur
     await is(s, "#/sso/callback", { session: "none" }, { type: "show", view: "sso", mode: "callback" });
     await is(s, "#/unknown", {}, { type: "replace", hash: "#/" });
   }
+  /* ── one login: the project keeps a single entrance ── */
+  await is("oneLogin", "", { session: "none" }, { type: "show", view: "auth", panel: "login" });
+  await is("oneLogin", "#/login", { session: "none" }, { type: "show", view: "auth", panel: "login" });
+  await is("oneLogin", "#/register", { session: "none" }, { type: "navigate", url: PLATFORM_URL + "/#/register" });
+  await is("oneLogin", "#/forgot", { session: "none" }, { type: "navigate", url: PLATFORM_URL + "/#/forgot" });
+  await is("oneLogin", "#/forgot/?x=1", { session: "none" }, { type: "navigate", url: PLATFORM_URL + "/#/forgot" });
+  await is("oneLogin", "#/register", { session: "valid" }, { type: "replace", hash: "#/app/overview" }); // signed in: no reason to register
+  await is("oneLogin", "#/register", { setup: true }, { type: "replace", hash: "#/setup" });         // first run still belongs to the wizard
+  await is("oneLogin", "#/app/devices", { session: "none" }, { type: "replace", hash: "#/login", resume: "#/app/devices" });
+  await is("oneLogin", "#/login", { session: "valid" }, { type: "replace", hash: "#/app/audit" }, { resume: "#/app/audit" });
+  // without the platform (standalone, or the project switch turned off) the project's own pages stay
+  await is("project", "#/register", { session: "none" }, { type: "show", view: "auth", panel: "register" });
+  await is("standalone", "#/forgot", { session: "none" }, { type: "show", view: "auth", panel: "forgot" });
   // The platform's authorization routes belong to the platform ...
   await is("project", "#/sso?client_id=meshbridge&state=s", {}, { type: "navigate", url: PLATFORM_URL + "/#/sso?client_id=meshbridge&state=s" });
   await is("project", "#/sso/logout", {}, { type: "navigate", url: PLATFORM_URL + "/#/sso/logout" });

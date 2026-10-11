@@ -302,7 +302,9 @@
       "activityTitle": "Atividade",
       "viewAll": "Ver tudo",
       "noTransfers": "Nenhuma transferência ainda.",
-      "noActivity": "Nada aconteceu ainda."
+      "noActivity": "Nada aconteceu ainda.",
+      "mapTitle": "Rede",
+      "mapLabel": "Mapa da rede. Dispositivos online: {online} de {total}. Transferências em andamento: {active}."
     },
     "start": {
       "title": "Comece por aqui",
@@ -384,7 +386,8 @@
       "quota": "{used} de {quota}",
       "noQuota": "{used} · sem cota",
       "emptyTitle": "Nenhum nó de relé",
-      "emptyText": "Relés são opcionais. Se duas regiões não conseguirem conexão direta, implante um Peer Relay num servidor com banda de sobra."
+      "emptyText": "Relés são opcionais. Se duas regiões não conseguirem conexão direta, implante um Peer Relay num servidor com banda de sobra.",
+      "unlimited": "Sem cota"
     },
     "audit": {
       "title": "Log de auditoria",
@@ -539,12 +542,11 @@
     "consoleNav": "Console do MeshBridge",
     "signOutPlatform": "Sair também do MineAI",
     "sso": {
-      "button": "Continuar com o MineAI",
       "title": "Entrando",
       "working": "Concluindo o login com o MineAI…",
-      "failed": "Não foi possível concluir o login com o MineAI. Tente de novo ou use outro método.",
+      "failed": "Não foi possível concluir o login com o MineAI. Tente de novo.",
       "retry": "Tentar de novo",
-      "useLogin": "Usar outro método"
+      "useLogin": "Voltar ao login"
     }
   },
   "service": {

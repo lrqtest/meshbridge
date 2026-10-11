@@ -298,7 +298,9 @@
       "activityTitle": "动态",
       "viewAll": "查看全部",
       "noTransfers": "还没有传输。",
-      "noActivity": "一切还很安静。"
+      "noActivity": "一切还很安静。",
+      "mapTitle": "网络",
+      "mapLabel": "网络拓扑图。在线设备 {online} / {total}；进行中的传输 {active}。"
     },
     "start": {
       "title": "开始上手",
@@ -380,7 +382,8 @@
       "quota": "{used} / {quota}",
       "noQuota": "{used} · 不限额",
       "emptyTitle": "没有中继节点",
-      "emptyText": "中继是可选的。如果两个地区无法直连，可以在大流量的服务器上部署一个 Peer Relay。"
+      "emptyText": "中继是可选的。如果两个地区无法直连，可以在大流量的服务器上部署一个 Peer Relay。",
+      "unlimited": "不限额"
     },
     "audit": {
       "title": "审计日志",
@@ -482,7 +485,7 @@
   "portal": {
     "pageTitle": "MineAI — 你的项目平台",
     "eyebrow": "MineAI 平台",
-    "title": "让每个项目，都有自己的位置。",
+    "title": "让每个项目，\n都有自己的位置。",
     "lede": "阅读、写作、编程与探索。每个项目都是独立的空间，一个 MineAI 账号即可进入全部。",
     "projects": "我的项目",
     "open": "打开项目",
@@ -535,12 +538,11 @@
     "consoleNav": "MeshBridge 控制台",
     "signOutPlatform": "同时退出 MineAI",
     "sso": {
-      "button": "使用 MineAI 账号继续",
       "title": "正在登录",
       "working": "正在完成 MineAI 登录…",
-      "failed": "未能完成 MineAI 登录。请重试，或改用其他登录方式。",
+      "failed": "未能完成 MineAI 登录。请重试。",
       "retry": "重试",
-      "useLogin": "改用其他登录方式"
+      "useLogin": "返回登录"
     }
   },
   "service": {

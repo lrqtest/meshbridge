@@ -300,7 +300,9 @@
       "activityTitle": "Aktivität",
       "viewAll": "Alle ansehen",
       "noTransfers": "Noch keine Übertragungen.",
-      "noActivity": "Es ist noch nichts passiert."
+      "noActivity": "Es ist noch nichts passiert.",
+      "mapTitle": "Netzwerk",
+      "mapLabel": "Netzwerkkarte. Geräte online: {online} von {total}. Laufende Übertragungen: {active}."
     },
     "start": {
       "title": "Einstieg",
@@ -382,7 +384,8 @@
       "quota": "{used} von {quota}",
       "noQuota": "{used} · ohne Limit",
       "emptyTitle": "Keine Relay-Knoten",
-      "emptyText": "Relays sind optional. Wenn zwei Regionen sich nicht direkt verbinden können, betreiben Sie ein Peer-Relay auf einem Server mit viel Traffic."
+      "emptyText": "Relays sind optional. Wenn zwei Regionen sich nicht direkt verbinden können, betreiben Sie ein Peer-Relay auf einem Server mit viel Traffic.",
+      "unlimited": "Ohne Kontingent"
     },
     "audit": {
       "title": "Audit-Log",
@@ -537,12 +540,11 @@
     "consoleNav": "MeshBridge-Konsole",
     "signOutPlatform": "Auch von MineAI abmelden",
     "sso": {
-      "button": "Weiter mit MineAI",
       "title": "Anmeldung läuft",
       "working": "Die MineAI-Anmeldung wird abgeschlossen …",
-      "failed": "Die MineAI-Anmeldung konnte nicht abgeschlossen werden. Versuchen Sie es erneut oder nutzen Sie eine andere Methode.",
+      "failed": "Die MineAI-Anmeldung konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
       "retry": "Erneut versuchen",
-      "useLogin": "Andere Methode verwenden"
+      "useLogin": "Zurück zur Anmeldung"
     }
   },
   "service": {

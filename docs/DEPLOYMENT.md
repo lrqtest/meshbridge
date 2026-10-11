@@ -68,7 +68,7 @@ curl -sf http://127.0.0.1:8081/api/v1/health
 ```text
 MESH_BASE_URL=https://mineai.top                    # 平台 origin，兼 SSO issuer，保持不变
 MESH_PROJECT_URL=https://meshbridge.mineai.top      # 项目 origin：规范形式，无尾斜杠，HTTPS
-# MESH_PROJECT_SSO=false                            # 可选：保留分域，但关闭“使用 MineAI 账号继续”
+# MESH_PROJECT_SSO=false                            # 可选：保留分域，但项目页恢复自己的密码表单（默认是一套登录）
 ```
 
 不设置 `MESH_PROJECT_URL` 就是独立安装：只有 MeshBridge 一个界面，任何主机名都显示它。

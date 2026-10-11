@@ -33,7 +33,7 @@ MineAI 主平台也可作为六个账号应用的统一登录入口。此功能�
 sandbox，完整原站权限应使用独立隧道子域。不要共享各项目密码或 master key。
 
 MineAI 平台与 MeshBridge 项目是两个 origin、两个界面（`https://mineai.top/` 只有项目导航和
-平台账号入口；`https://meshbridge.mineai.top/` 才是 MeshBridge 登录页与控制台），由同一进程按
+平台账号入口；`https://meshbridge.mineai.top/` 才是 MeshBridge 控制台，登录入口只通向平台这一套登录），由同一进程按
 Host 判定，配置见 `MESH_PROJECT_URL`（`docs/DEPLOYMENT.md`、仓库根目录 `docs/platform-surfaces.md`）。
 MeshBridge 作为平台的第七个 SSO client：授权码 + PKCE，会话各自独立，退出平台即时失效；
 Google 登录不会按邮箱接管管理员账号。

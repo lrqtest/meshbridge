@@ -300,7 +300,9 @@
       "activityTitle": "Activity",
       "viewAll": "View all",
       "noTransfers": "No transfers yet.",
-      "noActivity": "Nothing has happened yet."
+      "noActivity": "Nothing has happened yet.",
+      "mapTitle": "Network",
+      "mapLabel": "Network map. Devices online: {online} of {total}. Transfers in progress: {active}."
     },
     "start": {
       "title": "Getting started",
@@ -382,7 +384,8 @@
       "quota": "{used} of {quota}",
       "noQuota": "{used} · no quota",
       "emptyTitle": "No relay nodes",
-      "emptyText": "Relays are optional. If two regions can't connect directly, deploy a Peer Relay on a well-connected VPS; see docs/RELAY.md."
+      "emptyText": "Relays are optional. If two regions can't connect directly, deploy a Peer Relay on a well-connected VPS; see docs/RELAY.md.",
+      "unlimited": "No quota"
     },
     "audit": {
       "title": "Audit log",
@@ -537,12 +540,11 @@
     "consoleNav": "MeshBridge console",
     "signOutPlatform": "Also sign out of MineAI",
     "sso": {
-      "button": "Continue with MineAI",
       "title": "Signing you in",
       "working": "Completing your MineAI sign-in…",
-      "failed": "The MineAI sign-in couldn't be completed. Try again, or use another sign-in method.",
+      "failed": "The MineAI sign-in couldn't be completed. Try again.",
       "retry": "Try again",
-      "useLogin": "Use another sign-in method"
+      "useLogin": "Back to sign-in"
     }
   },
   "service": {

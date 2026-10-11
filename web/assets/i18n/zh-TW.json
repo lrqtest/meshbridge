@@ -298,7 +298,9 @@
       "activityTitle": "動態",
       "viewAll": "查看全部",
       "noTransfers": "還沒有傳輸。",
-      "noActivity": "一切都很安靜。"
+      "noActivity": "一切都很安靜。",
+      "mapTitle": "網路",
+      "mapLabel": "網路拓撲圖。線上裝置 {online} / {total}；進行中的傳輸 {active}。"
     },
     "start": {
       "title": "開始上手",
@@ -380,7 +382,8 @@
       "quota": "{used} / {quota}",
       "noQuota": "{used} · 不限額",
       "emptyTitle": "沒有中繼節點",
-      "emptyText": "中繼是選配的。如果兩個地區無法直連，可以在大流量的伺服器上部署一個 Peer Relay。"
+      "emptyText": "中繼是選配的。如果兩個地區無法直連，可以在大流量的伺服器上部署一個 Peer Relay。",
+      "unlimited": "不限額"
     },
     "audit": {
       "title": "稽核日誌",
@@ -482,7 +485,7 @@
   "portal": {
     "pageTitle": "MineAI — 你的專案平台",
     "eyebrow": "MineAI 平台",
-    "title": "讓每個專案，都有自己的位置。",
+    "title": "讓每個專案，\n都有自己的位置。",
     "lede": "閱讀、寫作、程式設計與探索。每個專案都是獨立的空間，一個 MineAI 帳號即可進入全部。",
     "projects": "我的專案",
     "open": "開啟專案",
@@ -535,12 +538,11 @@
     "consoleNav": "MeshBridge 主控台",
     "signOutPlatform": "同時登出 MineAI",
     "sso": {
-      "button": "使用 MineAI 帳號繼續",
       "title": "正在登入",
       "working": "正在完成 MineAI 登入…",
-      "failed": "未能完成 MineAI 登入。請重試，或改用其他登入方式。",
+      "failed": "未能完成 MineAI 登入。請重試。",
       "retry": "重試",
-      "useLogin": "改用其他登入方式"
+      "useLogin": "返回登入"
     }
   },
   "service": {

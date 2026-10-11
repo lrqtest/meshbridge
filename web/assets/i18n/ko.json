@@ -298,7 +298,9 @@
       "activityTitle": "활동",
       "viewAll": "모두 보기",
       "noTransfers": "아직 전송이 없습니다.",
-      "noActivity": "아직 아무 일도 없었습니다."
+      "noActivity": "아직 아무 일도 없었습니다.",
+      "mapTitle": "네트워크",
+      "mapLabel": "네트워크 맵. 온라인 기기 {online} / {total}, 진행 중인 전송 {active}."
     },
     "start": {
       "title": "시작하기",
@@ -380,7 +382,8 @@
       "quota": "{used} / {quota}",
       "noQuota": "{used} · 제한 없음",
       "emptyTitle": "릴레이 노드 없음",
-      "emptyText": "릴레이는 선택 사항입니다. 두 지역이 직접 연결되지 않으면 트래픽 여유가 많은 서버에 Peer Relay를 배포하세요."
+      "emptyText": "릴레이는 선택 사항입니다. 두 지역이 직접 연결되지 않으면 트래픽 여유가 많은 서버에 Peer Relay를 배포하세요.",
+      "unlimited": "한도 없음"
     },
     "audit": {
       "title": "감사 로그",
@@ -535,12 +538,11 @@
     "consoleNav": "MeshBridge 콘솔",
     "signOutPlatform": "MineAI에서도 로그아웃",
     "sso": {
-      "button": "MineAI로 계속",
       "title": "로그인하는 중",
       "working": "MineAI 로그인을 완료하는 중…",
-      "failed": "MineAI 로그인을 완료하지 못했습니다. 다시 시도하거나 다른 방법으로 로그인하세요.",
+      "failed": "MineAI 로그인을 완료하지 못했습니다. 다시 시도해 주세요.",
       "retry": "다시 시도",
-      "useLogin": "다른 방법으로 로그인"
+      "useLogin": "로그인으로 돌아가기"
     }
   },
   "service": {

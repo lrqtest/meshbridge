@@ -62,6 +62,7 @@
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></symbol>
   <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5h4"/></symbol>
   <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.3-1 4.6 4.6 0 0 1-.3 10H7z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v2M6.5 7l.8 11.2A2 2 0 0 0 9.3 20h5.4a2 2 0 0 0 2-1.8L17.5 7M10 11v5M14 11v5"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.6l2 2.2H18a2.5 2.5 0 0 1 2.5 2.5v7.8A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-10z"/></symbol>
 </svg>
 <div class="grain" aria-hidden="true"></div>
@@ -88,54 +89,88 @@
   </header>
   <main id="main" class="platform-main">
     <section class="hero wrap platform-hero" aria-labelledby="platform-title">
-      <p class="eyebrow" data-i18n="portal.eyebrow"></p>
-      <h1 class="display hero-title" id="platform-title" data-i18n="portal.title"></h1>
-      <p class="lede" data-i18n="portal.lede"></p>
-      <div class="cta-row">
-        <a class="btn btn-primary btn-lg" href="#projects" data-scroll="projects"><span data-i18n="portal.browse"></span><svg class="icon arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      <svg class="terrain-svg hero-terrain" data-seed="23" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="hero-copy">
+        <p class="eyebrow" data-i18n="portal.eyebrow"></p>
+        <h1 class="display hero-title" id="platform-title" data-i18n="portal.title"></h1>
+        <p class="lede" data-i18n="portal.lede"></p>
+        <div class="cta-row">
+          <a class="btn btn-primary btn-lg" href="#projects" data-scroll="projects"><span data-i18n="portal.browse"></span><svg class="icon arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        </div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+      <svg class="constellation" viewBox="0 0 560 520" aria-hidden="true" focusable="false">
+        <ellipse class="cn-orbit" cx="280" cy="262" rx="212" ry="186"/>
+        <ellipse class="cn-orbit in" cx="280" cy="262" rx="119" ry="104"/>
+        <path class="cn-arc" d="M280.0 76.0Q338.5 138.2 429.9 130.5"/>
+        <path class="cn-arc" d="M429.9 130.5Q421.1 210.7 492.0 262.0"/>
+        <path class="cn-arc" d="M492.0 262.0Q421.1 313.3 429.9 393.5"/>
+        <path class="cn-arc" d="M429.9 393.5Q338.5 385.8 280.0 448.0"/>
+        <path class="cn-arc" d="M280.0 448.0Q221.5 385.8 130.1 393.5"/>
+        <path class="cn-arc" d="M130.1 393.5Q138.9 313.3 68.0 262.0"/>
+        <path class="cn-arc" d="M68.0 262.0Q138.9 210.7 130.1 130.5"/>
+        <path class="cn-arc" d="M130.1 130.5Q221.5 138.2 280.0 76.0"/>
+        <line class="cn-spoke s0" x1="280" y1="262" x2="280.0" y2="76.0"/>
+        <line class="cn-spoke s1" x1="280" y1="262" x2="429.9" y2="130.5"/>
+        <line class="cn-spoke s2" x1="280" y1="262" x2="492.0" y2="262.0"/>
+        <line class="cn-spoke s3" x1="280" y1="262" x2="429.9" y2="393.5"/>
+        <line class="cn-spoke s4" x1="280" y1="262" x2="280.0" y2="448.0"/>
+        <line class="cn-spoke s5" x1="280" y1="262" x2="130.1" y2="393.5"/>
+        <line class="cn-spoke s6" x1="280" y1="262" x2="68.0" y2="262.0"/>
+        <line class="cn-spoke s7" x1="280" y1="262" x2="130.1" y2="130.5"/>
+        <g class="cn-hub" transform="translate(280 262)"><circle class="ring r2" r="84"/><circle class="ring" r="58"/><use class="hub-mark" href="#i-mark" x="-34" y="-34" width="68" height="68"/></g>
+        <a class="cn-node" data-p="folio" href="https://folio.mineai.top/" tabindex="-1" transform="translate(280.0 76.0)"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-folder" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="-42" data-i18n="project.folio"></text></a>
+        <a class="cn-node" data-p="inkwell" href="https://inkwell.mineai.top/" tabindex="-1" transform="translate(429.9 130.5)"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-audit" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="50" data-i18n="project.inkwell"></text></a>
+        <a class="cn-node" data-p="parley" href="https://parley.mineai.top/" tabindex="-1" transform="translate(492.0 262.0)"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-user" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="50" data-i18n="project.parley"></text></a>
+        <a class="cn-node" data-p="codebench" href="https://codebench.mineai.top/" tabindex="-1" transform="translate(429.9 393.5)"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-terminal" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="50" data-i18n="project.codebench"></text></a>
+        <a class="cn-node" data-p="echo" href="https://echo.mineai.top/" tabindex="-1" transform="translate(280.0 448.0)"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-activity" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="50" data-i18n="project.echo"></text></a>
+        <a class="cn-node" data-p="hearthvale" href="https://hearthvale.mineai.top/" tabindex="-1" transform="translate(130.1 393.5)"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-mesh" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="50" data-i18n="project.hearthvale"></text></a>
+        <a class="cn-node" data-p="toolshed" href="https://toolshed.mineai.top/" tabindex="-1" transform="translate(68.0 262.0)"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-box" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="50" data-i18n="project.toolshed"></text></a>
+        <a class="cn-node" data-p="mb" href="https://meshbridge.mineai.top/" tabindex="-1" transform="translate(130.1 130.5)" data-project-link="mb"><circle class="halo" r="34"/><circle class="disc" r="29"/><use class="glyph" href="#i-globe" x="-12" y="-12" width="24" height="24"/><text class="cn-label" y="50" data-i18n="project.mb"></text></a>
+      </svg>
       </div>
     </section>
     <section class="wrap platform-projects" id="projects" aria-labelledby="projects-title">
       <div class="sec-head"><div><h2 class="display sec-title" id="projects-title" data-i18n="portal.projects"></h2><p class="sec-sub" data-i18n="portal.projectsSub"></p></div></div>
       <div class="project-grid">
-        <a class="project-card" href="https://folio.mineai.top/" aria-labelledby="project-folio">
+        <a class="project-card" href="https://folio.mineai.top/" data-p="folio" aria-labelledby="project-folio">
           <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-folio" data-i18n="project.folio"></h3><p class="card-body" data-i18n="portal.folio"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-folio" data-i18n="project.folio"></h3><p class="card-body" data-i18n="portal.folio"></p><span class="card-host">folio.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
-        <a class="project-card" href="https://inkwell.mineai.top/" aria-labelledby="project-inkwell">
+        <a class="project-card" href="https://inkwell.mineai.top/" data-p="inkwell" aria-labelledby="project-inkwell">
           <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-audit"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-inkwell" data-i18n="project.inkwell"></h3><p class="card-body" data-i18n="portal.inkwell"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-inkwell" data-i18n="project.inkwell"></h3><p class="card-body" data-i18n="portal.inkwell"></p><span class="card-host">inkwell.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
-        <a class="project-card" href="https://parley.mineai.top/" aria-labelledby="project-parley">
+        <a class="project-card" href="https://parley.mineai.top/" data-p="parley" aria-labelledby="project-parley">
           <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-parley" data-i18n="project.parley"></h3><p class="card-body" data-i18n="portal.parley"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-parley" data-i18n="project.parley"></h3><p class="card-body" data-i18n="portal.parley"></p><span class="card-host">parley.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
-        <a class="project-card" href="https://codebench.mineai.top/" aria-labelledby="project-codebench">
+        <a class="project-card" href="https://codebench.mineai.top/" data-p="codebench" aria-labelledby="project-codebench">
           <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-codebench" data-i18n="project.codebench"></h3><p class="card-body" data-i18n="portal.codebench"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-codebench" data-i18n="project.codebench"></h3><p class="card-body" data-i18n="portal.codebench"></p><span class="card-host">codebench.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
-        <a class="project-card" href="https://echo.mineai.top/" aria-labelledby="project-echo">
+        <a class="project-card" href="https://echo.mineai.top/" data-p="echo" aria-labelledby="project-echo">
           <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-echo" data-i18n="project.echo"></h3><p class="card-body" data-i18n="portal.echo"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-echo" data-i18n="project.echo"></h3><p class="card-body" data-i18n="portal.echo"></p><span class="card-host">echo.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
-        <a class="project-card" href="https://hearthvale.mineai.top/" aria-labelledby="project-hearthvale">
+        <a class="project-card" href="https://hearthvale.mineai.top/" data-p="hearthvale" aria-labelledby="project-hearthvale">
           <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-mesh"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-hearthvale" data-i18n="project.hearthvale"></h3><p class="card-body" data-i18n="portal.hearthvale"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-hearthvale" data-i18n="project.hearthvale"></h3><p class="card-body" data-i18n="portal.hearthvale"></p><span class="card-host">hearthvale.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
-        <a class="project-card" href="https://toolshed.mineai.top/" aria-labelledby="project-toolshed">
+        <a class="project-card" href="https://toolshed.mineai.top/" data-p="toolshed" aria-labelledby="project-toolshed">
           <span class="card-ic"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-toolshed" data-i18n="project.toolshed"></h3><p class="card-body" data-i18n="portal.toolshed"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-toolshed" data-i18n="project.toolshed"></h3><p class="card-body" data-i18n="portal.toolshed"></p><span class="card-host">toolshed.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
-        <a class="project-card project-mesh" href="https://meshbridge.mineai.top/" data-project-link="mb" aria-labelledby="project-meshbridge">
+        <a class="project-card project-mesh" href="https://meshbridge.mineai.top/" data-project-link="mb" data-p="mb" aria-labelledby="project-meshbridge">
           <span class="card-ic slate"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg></span>
-          <span class="card-text"><h3 class="display card-title" id="project-meshbridge" data-i18n="project.mb"></h3><p class="card-body" data-i18n="portal.meshbridge"></p></span>
+          <span class="card-text"><h3 class="display card-title" id="project-meshbridge" data-i18n="project.mb"></h3><p class="card-body" data-i18n="portal.meshbridge"></p><span class="card-host">meshbridge.mineai.top</span></span>
           <span class="project-open"><span data-i18n="portal.open"></span><svg class="icon" aria-hidden="true"><use href="#i-arrow-ur"/></svg></span>
         </a>
       </div>
@@ -172,6 +207,13 @@
         <h1 class="display auth-title" data-i18n-platform="auth.login.title" data-i18n-project="mb.login.title"></h1>
         <p class="auth-sub" data-i18n-platform="auth.login.sub" data-i18n-project="mb.login.sub"></p>
         <div class="callout" data-role="notice" hidden><svg class="icon"><use href="#i-info"/></svg><div data-role="notice-text"></div></div>
+        <!-- one login: the platform's. The project has no form of its own, only the way to it -->
+        <div class="sso-entry" id="sso-entry" hidden>
+          <div class="callout error" data-role="err" hidden><svg class="icon"><use href="#i-alert"/></svg><div data-role="err-text"></div></div>
+          <button class="btn btn-primary btn-lg btn-block" id="mb-sso" type="button"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span data-i18n="sso.signIn"></span></button>
+          <p class="hint sso-hint" data-i18n="auth.ssoOnly.hint"></p>
+          <p class="auth-alt"><span data-i18n="auth.ssoOnly.create"></span> <a class="link" id="sso-create" href="#/register" data-i18n="auth.ssoOnly.createLink"></a></p>
+        </div>
         <form id="form-login" novalidate>
           <label class="field"><span class="label" data-i18n="auth.emailOrUser"></span>
             <input class="input" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required data-i18n-attr="placeholder:auth.emailPh"></label>
@@ -183,7 +225,6 @@
         <div class="alt-auth" id="alt-auth" hidden>
           <div class="divider"><span data-i18n="auth.alt"></span></div>
           <div class="alt-stack">
-            <button class="btn btn-outline btn-lg btn-block" id="mb-sso" type="button" hidden><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span data-i18n="mb.sso.button"></span></button>
             <div class="gsign" id="mb-gsign" hidden>
               <div class="gsign-btn" data-role="gsign-btn"></div>
               <div class="callout warn" data-role="gsign-load" hidden><svg class="icon"><use href="#i-info"/></svg><div><span data-i18n="err.google.load"></span> <button class="link" type="button" data-role="gsign-retry" data-i18n="common.retry"></button></div></div>
@@ -299,6 +340,32 @@
   <aside class="auth-art" aria-hidden="true">
     <div class="art-card">
       <svg class="terrain-svg" data-terrain="auth" preserveAspectRatio="none"></svg>
+      <svg class="art-net" viewBox="0 0 480 300" aria-hidden="true" focusable="false">
+        <ellipse class="an-orbit" cx="240" cy="150" rx="196" ry="108"/>
+        <ellipse class="an-orbit in" cx="240" cy="150" rx="114" ry="63"/>
+        <path class="an-arc" d="M325.0 52.7Q350.4 101.5 431.1 126.0"/>
+        <path class="an-arc" d="M431.1 126.0Q377.7 167.3 393.2 217.3"/>
+        <path class="an-arc" d="M393.2 217.3Q301.3 220.1 240.0 258.0"/>
+        <path class="an-arc" d="M240.0 258.0Q178.7 220.1 86.8 217.3"/>
+        <path class="an-arc" d="M86.8 217.3Q102.3 167.3 48.9 126.0"/>
+        <path class="an-arc" d="M48.9 126.0Q129.6 101.5 155.0 52.7"/>
+        <path class="an-arc" d="M155.0 52.7Q240.0 72.2 325.0 52.7"/>
+        <line class="an-spoke live l0" x1="240" y1="150" x2="325.0" y2="52.7"/>
+        <line class="an-spoke" x1="240" y1="150" x2="431.1" y2="126.0"/>
+        <line class="an-spoke live l2" x1="240" y1="150" x2="393.2" y2="217.3"/>
+        <line class="an-spoke" x1="240" y1="150" x2="240.0" y2="258.0"/>
+        <line class="an-spoke live l4" x1="240" y1="150" x2="86.8" y2="217.3"/>
+        <line class="an-spoke" x1="240" y1="150" x2="48.9" y2="126.0"/>
+        <line class="an-spoke" x1="240" y1="150" x2="155.0" y2="52.7"/>
+        <g class="an-hub" transform="translate(240 150)"><circle class="ring r2" r="62"/><circle class="ring" r="43"/><use class="hub-mark" href="#i-mark" x="-26" y="-26" width="52" height="52"/></g>
+        <g class="an-node" transform="translate(325.0 52.7)"><circle class="disc" r="15"/><use class="glyph" href="#i-device" x="-8" y="-8" width="16" height="16"/></g>
+        <g class="an-node" transform="translate(431.1 126.0)"><circle class="disc" r="15"/><use class="glyph" href="#i-device" x="-8" y="-8" width="16" height="16"/></g>
+        <g class="an-node" transform="translate(393.2 217.3)"><circle class="disc" r="15"/><use class="glyph" href="#i-device" x="-8" y="-8" width="16" height="16"/></g>
+        <g class="an-node off" transform="translate(240.0 258.0)"><circle class="disc" r="15"/><use class="glyph" href="#i-device" x="-8" y="-8" width="16" height="16"/></g>
+        <g class="an-node" transform="translate(86.8 217.3)"><circle class="disc" r="15"/><use class="glyph" href="#i-device" x="-8" y="-8" width="16" height="16"/></g>
+        <g class="an-node" transform="translate(48.9 126.0)"><circle class="disc" r="15"/><use class="glyph" href="#i-device" x="-8" y="-8" width="16" height="16"/></g>
+        <g class="an-node off" transform="translate(155.0 52.7)"><circle class="disc" r="15"/><use class="glyph" href="#i-device" x="-8" y="-8" width="16" height="16"/></g>
+      </svg>
       <p class="art-kicker" data-art="kicker"></p>
       <h2 class="display art-title" data-art="title"></h2>
       <ul class="art-list">
@@ -351,6 +418,12 @@
     <main class="app-main" id="main-app">
       <!-- overview -->
       <section class="page" data-page="overview" hidden>
+        <div class="toolbar ov-actions">
+          <span class="spacer"></span>
+          <button class="btn btn-outline btn-sm" type="button" data-open="tunnel"><svg class="icon"><use href="#i-globe"/></svg><span data-i18n="app.tunnels.new"></span></button>
+          <button class="btn btn-outline btn-sm" type="button" data-open="transfer"><svg class="icon"><use href="#i-transfer"/></svg><span data-i18n="app.transfers.new"></span></button>
+          <button class="btn btn-primary btn-sm" type="button" data-open="enroll" data-admin><svg class="icon"><use href="#i-plus"/></svg><span data-i18n="app.devices.add"></span></button>
+        </div>
         <div class="panel checklist" id="checklist" hidden>
           <div><h2 class="display checklist-title" data-i18n="app.start.title"></h2><p class="checklist-sub" data-i18n="app.start.sub"></p></div>
           <span class="check-progress" id="check-progress"></span>
@@ -361,10 +434,21 @@
           </div>
         </div>
         <div class="stats">
-          <div class="stat" id="st-devices"><div class="stat-k"><svg class="icon"><use href="#i-device"/></svg><span data-i18n="app.overview.statDevices"></span></div><div class="stat-v" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
-          <div class="stat" id="st-transfers"><div class="stat-k"><svg class="icon"><use href="#i-transfer"/></svg><span data-i18n="app.overview.statTransfers"></span></div><div class="stat-v" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
-          <div class="stat" id="st-relays"><div class="stat-k"><svg class="icon"><use href="#i-relay"/></svg><span data-i18n="app.overview.statRelays"></span></div><div class="stat-v" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
-          <div class="stat" id="st-control"><div class="stat-k"><svg class="icon"><use href="#i-shield"/></svg><span data-i18n="app.overview.statControl"></span></div><div class="stat-v word" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
+          <div class="stat" id="st-devices"><div class="stat-k"><span class="stat-ic"><svg class="icon"><use href="#i-device"/></svg></span><span data-i18n="app.overview.statDevices"></span></div><div class="stat-v" data-role="v">—</div><div class="seg" data-role="seg" aria-hidden="true"></div><div class="stat-note" data-role="n"></div></div>
+          <div class="stat" id="st-transfers"><div class="stat-k"><span class="stat-ic"><svg class="icon"><use href="#i-transfer"/></svg></span><span data-i18n="app.overview.statTransfers"></span></div><div class="stat-v" data-role="v">—</div><div class="seg" data-role="seg" aria-hidden="true"></div><div class="stat-note" data-role="n"></div></div>
+          <div class="stat" id="st-relays"><div class="stat-k"><span class="stat-ic"><svg class="icon"><use href="#i-relay"/></svg></span><span data-i18n="app.overview.statRelays"></span></div><div class="stat-v" data-role="v">—</div><div class="seg" data-role="seg" aria-hidden="true"></div><div class="stat-note" data-role="n"></div></div>
+          <div class="stat" id="st-control"><div class="stat-k"><span class="stat-ic"><svg class="icon"><use href="#i-shield"/></svg></span><span data-i18n="app.overview.statControl"></span></div><div class="stat-v word" data-role="v">—</div><div class="stat-note" data-role="n"></div></div>
+        </div>
+        <div class="panel map-panel">
+          <div class="panel-head">
+            <h2 class="display panel-title" data-i18n="app.overview.mapTitle"></h2>
+            <ul class="legend" aria-hidden="true">
+              <li class="on"><i></i><span data-i18n="status.online"></span></li>
+              <li class="off"><i></i><span data-i18n="status.offline"></span></li>
+              <li class="flow"><i></i><span data-i18n="state.TRANSFERRING"></span></li>
+            </ul>
+          </div>
+          <div class="map" id="net-map"></div>
         </div>
         <div class="ov-grid">
           <div class="panel">
@@ -435,8 +519,19 @@
 
       <!-- settings -->
       <section class="page" data-page="settings" hidden>
+        <div class="settings-layout">
+        <nav class="set-nav" id="set-nav" data-i18n-attr="aria-label:app.nav.settings">
+          <button type="button" data-target="sec-account" data-i18n="app.settings.accountTitle"></button>
+          <button type="button" data-target="sec-appearance" data-i18n="app.settings.appearanceTitle"></button>
+          <div class="grp" data-admin data-i18n="app.settings.groupPlatform"></div>
+          <button type="button" data-admin data-target="sec-google" data-i18n="gset.title"></button>
+          <button type="button" data-admin data-target="sec-mail" data-i18n="app.settings.mailTitle"></button>
+          <button type="button" data-admin data-target="sec-reg" data-i18n="app.settings.regTitle"></button>
+          <div class="grp" data-admin data-i18n="app.settings.groupProject"></div>
+          <button type="button" data-admin data-target="sec-tunnels" data-i18n="app.settings.tunnelsTitle"></button>
+        </nav>
         <div class="settings">
-          <div class="panel set-card">
+          <div class="panel set-card" id="sec-account">
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.accountTitle"></h2><p class="set-desc" data-i18n="app.settings.accountDesc"></p></div></div>
             <dl class="account-grid">
               <div><dt data-i18n="auth.username"></dt><dd id="acc-name"></dd></div>
@@ -454,7 +549,7 @@
             </div>
           </div>
 
-          <div class="panel set-card">
+          <div class="panel set-card" id="sec-appearance">
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.appearanceTitle"></h2><p class="set-desc" data-i18n="app.settings.appearanceDesc"></p></div></div>
             <div class="set-row">
               <div class="set-k"><b data-i18n="app.settings.langLabel"></b><span data-i18n="app.settings.langDesc"></span></div>
@@ -475,7 +570,7 @@
             <p class="set-group-note" data-i18n="app.settings.groupPlatformNote"></p>
           </div>
 
-          <div class="panel set-card" data-admin>
+          <div class="panel set-card" data-admin id="sec-google">
             <div class="set-head"><div><h2 class="display set-title" data-i18n="gset.title"></h2><p class="set-desc" data-i18n="gset.desc"></p></div><span class="pill" id="gset-status"></span></div>
             <div class="set-row stack">
               <div class="set-k"><b data-i18n="gset.client"></b><span id="gset-source"></span></div>
@@ -489,12 +584,12 @@
             <div class="form-actions"><button class="btn btn-outline btn-sm" type="button" id="set-google-save" data-i18n="common.save"></button></div>
           </div>
 
-          <div class="panel set-card" data-admin>
+          <div class="panel set-card" data-admin id="sec-mail">
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.mailTitle"></h2><p class="set-desc" data-i18n="app.settings.mailDesc"></p></div><span class="pill" id="smtp-status"></span></div>
             <div data-mount="smtp-settings"></div>
           </div>
 
-          <div class="panel set-card" data-admin>
+          <div class="panel set-card" data-admin id="sec-reg">
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.regTitle"></h2><p class="set-desc" data-i18n="app.settings.regDesc"></p></div>
               <button class="switch" type="button" role="switch" aria-checked="false" id="set-reg" data-i18n-attr="aria-label:app.settings.regTitle"></button></div>
           </div>
@@ -503,7 +598,7 @@
             <h2 class="set-group-title" data-i18n="app.settings.groupProject"></h2>
           </div>
 
-          <div class="panel set-card" data-admin>
+          <div class="panel set-card" data-admin id="sec-tunnels">
             <div class="set-head"><div><h2 class="display set-title" data-i18n="app.settings.tunnelsTitle"></h2><p class="set-desc" data-i18n="app.settings.tunnelsDesc"></p></div></div>
             <div class="set-row">
               <div class="set-k"><b data-i18n="app.settings.tunEnabled"></b><span data-i18n="app.settings.tunEnabledHint"></span></div>
@@ -519,6 +614,7 @@
             </div>
             <div class="form-actions"><button class="btn btn-outline btn-sm" type="button" id="set-tun-save" data-i18n="app.settings.tunSave"></button></div>
           </div>
+        </div>
         </div>
       </section>
     </main>

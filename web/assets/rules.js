@@ -69,7 +69,7 @@
   /* ───────────────────────── planning ───────────────────────── */
 
   // plan decides what a hash means on a surface. ctx:
-  //   surface  { kind, split, platformURL, projectURL }
+  //   surface  { kind, split, platformURL, projectURL, sso }   sso: the platform signs people in to this project
   //   hash     location.hash
   //   resume   a pending post-sign-in destination (unvalidated)
   //   wizard   true while the first-run wizard continues after the admin exists
@@ -120,6 +120,10 @@
       case "auth":
         if (await setup()) return { type: "replace", hash: "#/setup" };
         if (await facts.session() === "valid") return { type: "replace", hash: safeResume(ctx.resume) || CONSOLE };
+        // One login: when the platform signs people in, the project keeps a
+        // single way in. Creating an account and recovering a password happen
+        // on the platform, where the account lives.
+        if (surface.sso && surface.platformURL && route.panel !== "login") return { type: "navigate", url: surface.platformURL + "/#/" + route.panel };
         return { type: "show", view: "auth", panel: route.panel };
       case "setup":
         if (await setup()) return { type: "show", view: "auth", panel: "setup" };

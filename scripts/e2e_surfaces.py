@@ -57,7 +57,7 @@ def free_port():
 class Server:
     """A throw-away MeshBridge with platform and project origins on one port."""
 
-    def __init__(self, workdir, port=None, admin=True):
+    def __init__(self, workdir, port=None, admin=True, env=None):
         self.port = port or free_port()
         self.dir = Path(workdir)
         self.data = self.dir / "data"
@@ -84,6 +84,7 @@ class Server:
             self.env["KIT_WEB_DIR"] = str(KIT_WEB)
         for k in ("MESH_GOOGLE_CLIENT_ID", "MESH_PROJECT_SSO"):
             self.env.pop(k, None)
+        self.env.update(env or {})
         self.build()
         if admin:
             self.create_user("admin", self.password, admin=True)
@@ -238,6 +239,19 @@ def sign_in_form(page, user, password):
     page.fill('#form-login [name="username"]', user)
     page.fill('#form-login [name="password"]', password)
     page.click('#form-login [type="submit"]')
+
+
+def sso_sign_in(page, server, user="admin", start="/", then=None):
+    """The one login: from the project's entrance, through the platform's sign-in page, and back.
+    With a platform session already in this browser the password is not asked again."""
+    page.goto(server.proj + start)
+    wait_panel(page, "login")
+    page.click("#mb-sso")
+    page.wait_for_url(re.compile(re.escape(server.plat) + r"/#/sso\?"))
+    wait_panel(page, "login")
+    if page.locator("#form-login").is_visible():
+        sign_in_form(page, user, server.password if user == "admin" else server.member_password)
+    wait_view(page, "app")
 
 
 def seed_session(page, origin, token, lang=None):
@@ -402,6 +416,9 @@ def platform_legacy_console_links_move_to_the_project(E):
     p.goto(E.s.plat + "/#/app/devices", wait_until="commit")
     wait_panel(p, "login")
     eq(p.url, E.s.proj + "/#/login", "legacy link without a session")
+    p.click("#mb-sso")
+    p.wait_for_url(re.compile(re.escape(E.s.plat) + r"/#/sso\?"))
+    wait_panel(p, "login")
     sign_in_form(p, "admin", E.s.password)
     wait_view(p, "app")
     eq(p.url, E.s.proj + "/#/app/devices", "the legacy target is resumed after signing in")
@@ -426,7 +443,7 @@ def platform_old_path_deep_links(E):
 
 # ───────────────────────── project origin ─────────────────────────
 @case
-def project_signed_out_shows_the_meshbridge_sign_in(E):
+def project_signed_out_offers_one_way_in(E):
     p = E.page()
     p.goto(E.s.proj + "/")
     wait_panel(p, "login")
@@ -438,23 +455,34 @@ def project_signed_out_shows_the_meshbridge_sign_in(E):
     back = p.locator("#view-auth .back-link")
     eq(back.get_attribute("href"), E.s.plat + "/", "way back to the platform")
     check("MineAI" in back.inner_text(), "back link names the platform")
-    check(p.locator("#mb-sso").is_visible(), "continue with MineAI is offered")
     check("≠" in p.locator('[data-art="kicker"]').inner_text(), "project art keeps the control/data motto")
+    # one login: a single way in, no credentials asked here
+    btn = p.locator("#mb-sso")
+    check(btn.is_visible(), "the one way in is offered")
+    eq(btn.inner_text().strip(), "Sign in with MineAI", "the entrance reads the same as on every MineAI project")
+    check(p.locator("#form-login").is_hidden(), "the project has no password form of its own")
     for field in ("username", "password"):
-        check(p.locator(f'#form-login [name="{field}"]').is_visible(), f"{field} field")
-    check(p.locator('[data-reg-link]').is_visible(), "registration link when sign-up is open")
+        check(not p.locator(f'#form-login [name="{field}"]').is_visible(), f"{field} field must not be offered on the project")
+    check(p.locator("[data-reg-link]").is_hidden(), "no registration link of its own")
+    check(p.locator("#alt-auth").is_hidden() and p.locator("#mb-gsign").is_hidden(), "no Google here: the platform page owns it")
+    eq(p.locator("#sso-create").get_attribute("href"), E.s.plat + "/#/register", "creating an account happens on the platform")
     check(not p.errors, f"page errors: {p.errors}")
     p.goto(E.s.proj + "/#/projects")  # an in-page anchor is not a route on the project
     wait_panel(p, "login")
+    # account creation and recovery are the platform's pages
+    for name in ("register", "forgot"):
+        q = E.page()
+        q.goto(E.s.proj + f"/#/{name}")
+        q.wait_for_url(E.s.plat + f"/#/{name}")
+        wait_panel(q, name)
+        eq(q.locator("#view-auth .wordmark").inner_text(), "MineAI", f"{name} is the platform's page")
+        E.release(q)
 
 
 @case
-def project_password_sign_in_enters_the_console(E):
+def project_sign_in_enters_the_console(E):
     p = E.page()
-    p.goto(E.s.proj + "/")
-    wait_panel(p, "login")
-    sign_in_form(p, "admin", E.s.password)
-    wait_view(p, "app")
+    sso_sign_in(p, E.s)
     eq(p.url, E.s.proj + "/#/app/overview", "console after sign-in")
     check(p.title().endswith("· MeshBridge"), "console title " + p.title())
     eq(p.locator("#sidebar .wordmark").inner_text(), "MeshBridge", "console brand")
@@ -471,10 +499,7 @@ def project_password_sign_in_enters_the_console(E):
     eq(p.url, E.s.proj + "/#/app/overview", "sign-in route while signed in")
     # an ordinary member sees no administrator settings
     q = E.page()
-    q.goto(E.s.proj + "/#/login")
-    wait_panel(q, "login")
-    sign_in_form(q, "member", E.s.member_password)
-    wait_view(q, "app")
+    sso_sign_in(q, E.s, user="member")
     q.goto(E.s.proj + "/#/app/settings")
     q.wait_for_selector('[data-page="settings"]:not([hidden])')
     check(q.locator('[data-page="settings"] [data-admin]').evaluate_all("els => els.every(e => e.hidden)"), "administrator settings hidden from members")
@@ -485,41 +510,50 @@ def project_failed_sign_in_keeps_the_target(E):
     p = E.page()
     p.goto(E.s.proj + "/#/app/audit")
     wait_panel(p, "login")
+    p.click("#mb-sso")
+    p.wait_for_url(re.compile(re.escape(E.s.plat) + r"/#/sso\?"))
+    wait_panel(p, "login")
     sign_in_form(p, "admin", "definitely-not-the-password")
     p.wait_for_selector('#form-login [data-role="err"]:not([hidden])')
     eq(p.locator('#form-login [data-role="err-text"]').inner_text(), "Incorrect email, username or password.", "wrong password wording")
-    eq(panel(p), "login", "still on the sign-in")
+    eq(panel(p), "login", "still on the platform sign-in")
+    check(p.url.startswith(E.s.plat), "a failed attempt stays on the platform: " + p.url)
     p.fill('#form-login [name="password"]', E.s.password)
     p.click('#form-login [type="submit"]')
     wait_view(p, "app")
     eq(p.url, E.s.proj + "/#/app/audit", "the target survived a failed attempt")
-    # a reload on the sign-in page keeps the target too
+    # a reload on the project's entrance keeps the target too
     q = E.page()
     q.goto(E.s.proj + "/#/app/relays")
     wait_panel(q, "login")
     q.reload()
     wait_panel(q, "login")
+    q.click("#mb-sso")
+    q.wait_for_url(re.compile(re.escape(E.s.plat) + r"/#/sso\?"))
+    wait_panel(q, "login")
     sign_in_form(q, "admin", E.s.password)
     wait_view(q, "app")
-    eq(q.url, E.s.proj + "/#/app/relays", "target survives a reload of the sign-in page")
+    eq(q.url, E.s.proj + "/#/app/relays", "target survives a reload of the entrance")
 
 
 @case
 def project_expired_session_returns_to_the_same_page(E):
     p = E.page()
+    seed_session(p, E.s.plat, E.s.token())      # the platform session: the one login
     seed_session(p, E.s.proj, E.s.token())
     p.goto(E.s.proj + "/#/app/transfers")
     wait_view(p, "app")
     p.evaluate("localStorage.setItem('mb_token', 'revoked-or-expired')")
     p.goto(E.s.proj + "/#/app/devices")
     wait_panel(p, "login")
-    eq(p.url, E.s.proj + "/#/login", "expired session lands on the sign-in")
-    sign_in_form(p, "admin", E.s.password)
+    eq(p.url, E.s.proj + "/#/login", "expired session lands on the entrance")
+    p.click("#mb-sso")                           # the platform still knows this person: no password
     wait_view(p, "app")
     eq(p.url, E.s.proj + "/#/app/devices", "back on the page that was open")
     # expiry noticed mid-session by an API call
     q = E.page()
     t = E.s.token()
+    seed_session(q, E.s.plat, E.s.token())
     seed_session(q, E.s.proj, t)
     q.goto(E.s.proj + "/#/app/audit")
     wait_view(q, "app")
@@ -527,7 +561,7 @@ def project_expired_session_returns_to_the_same_page(E):
     q.click('#sidebar a[data-nav="devices"]')
     wait_panel(q, "login")
     has(q.locator('[data-panel="login"] [data-role="notice-text"]').inner_text(), "expired", "expiry notice")
-    sign_in_form(q, "admin", E.s.password)
+    q.click("#mb-sso")
     wait_view(q, "app")
     eq(q.url, E.s.proj + "/#/app/devices", "resumed after mid-session expiry")
 
@@ -554,23 +588,34 @@ def project_sign_out_leaves_nothing_behind(E):
 
 @case
 def project_routes_do_not_loop_between_register_forgot_login(E):
+    # the project keeps one entrance; the platform keeps the rest, and the two never bounce
     p = E.page()
     p.goto(E.s.proj + "/#/login")
     wait_panel(p, "login")
     seen = []
     p.on("framenavigated", lambda f: seen.append(f.url))
-    for target, want in (("#/register", "register"), ("#/forgot", "forgot"), ("#/login", "login"), ("#/register", "register"), ("#/login", "login")):
+    for target in ("#/login", "#/projects", "#/login"):
         p.evaluate("h => { location.hash = h }", target)
-        wait_panel(p, want)
-        eq(p.url, E.s.proj + "/" + target, f"hash for {want}")
-    p.click('[data-panel="login"] a[href="#/register"]')
-    wait_panel(p, "register")
-    p.click('[data-panel="register"] a[href="#/login"]')
-    wait_panel(p, "login")
-    p.click('[data-panel="login"] a[href="#/forgot"]')
-    wait_panel(p, "forgot")
-    p.click('[data-panel="forgot"] a[href="#/login"]')
-    wait_panel(p, "login")
+        wait_panel(p, "login")
+    check(len(seen) < 10, f"navigation churn on the project entrance: {len(seen)}")
+    # the platform's own panels link to each other without looping
+    q = E.page()
+    q.goto(E.s.plat + "/#/login")
+    wait_panel(q, "login")
+    seen = []
+    q.on("framenavigated", lambda f: seen.append(f.url))
+    for target, want in (("#/register", "register"), ("#/forgot", "forgot"), ("#/login", "login"), ("#/register", "register"), ("#/login", "login")):
+        q.evaluate("h => { location.hash = h }", target)
+        wait_panel(q, want)
+        eq(q.url, E.s.plat + "/" + target, f"hash for {want}")
+    q.click('[data-panel="login"] [data-reg-link] a[href="#/register"]')
+    wait_panel(q, "register")
+    q.click('[data-panel="register"] a[href="#/login"]')
+    wait_panel(q, "login")
+    q.click('[data-panel="login"] a[href="#/forgot"]')
+    wait_panel(q, "forgot")
+    q.click('[data-panel="forgot"] a[href="#/login"]')
+    wait_panel(q, "login")
     check(len(seen) < 40, f"navigation churn suggests a loop: {len(seen)}")
 
 
@@ -701,7 +746,7 @@ def sign_in_errors_are_worded_per_status(E):
     ]
     for status, code, message, want in cases:
         p = E.page()
-        p.goto(E.s.proj + "/#/login")
+        p.goto(E.s.plat + "/#/login")
         wait_panel(p, "login")
         route_json(p, "**/api/v1/auth/login", status, code, message)
         sign_in_form(p, "admin", "irrelevant-password")
@@ -709,7 +754,7 @@ def sign_in_errors_are_worded_per_status(E):
         eq(p.locator('#form-login [data-role="err-text"]').inner_text(), want, f"HTTP {status}")
         eq(panel(p), "login", f"HTTP {status} keeps the sign-in")
     p = E.page()
-    p.goto(E.s.proj + "/#/login")
+    p.goto(E.s.plat + "/#/login")
     wait_panel(p, "login")
     p.route("**/api/v1/auth/login", lambda r: r.abort())
     sign_in_form(p, "admin", "irrelevant-password")
@@ -717,7 +762,7 @@ def sign_in_errors_are_worded_per_status(E):
     eq(p.locator('#form-login [data-role="err-text"]').inner_text(), "Can't reach the server. Check your connection and try again.", "network failure")
     p.unroute("**/api/v1/auth/login")
     sign_in_form(p, "admin", E.s.password)
-    wait_view(p, "app")
+    wait_view(p, "landing")
 
 
 # ───────────────────────── Google ─────────────────────────
@@ -744,7 +789,7 @@ def google_shown_once_when_configured(E):
     cid = "1234567890-abcdef.apps.googleusercontent.com"
     set_google(E.s, cid)
     try:
-        for origin in (E.s.plat, E.s.proj):
+        for origin in (E.s.plat,):
             p = E.page(gis=True)
             p.goto(f"{origin}/#/login")
             wait_panel(p, "login")
@@ -772,6 +817,13 @@ def google_shown_once_when_configured(E):
             p.evaluate("location.hash = '#/login'")
             wait_panel(p, "login")
             until(p, "window.__g.prompt === 2")
+        # one login: the project offers no Google even when it is configured
+        q = E.page(gis=True)
+        q.goto(E.s.proj + "/#/login")
+        wait_panel(q, "login")
+        settle(q, 500)
+        check(q.locator("#mb-gsign").is_hidden() and q.locator("#alt-auth").is_hidden(), "the project must not offer Google: the platform page owns it")
+        eq(q.evaluate("typeof window.__g"), "undefined", "the Google script is not loaded on the project")
     finally:
         set_google(E.s, "")
 
@@ -781,13 +833,13 @@ def google_unreachable_is_explained_and_password_still_works(E):
     set_google(E.s, "1234567890-abcdef.apps.googleusercontent.com")
     try:
         p = E.page(block_google=True)
-        p.goto(E.s.proj + "/#/login")
+        p.goto(E.s.plat + "/#/login")
         wait_panel(p, "login")
         p.wait_for_selector('[data-role="gsign-load"]:not([hidden])', timeout=15000)
         has(p.locator('[data-role="gsign-load"]').inner_text(), "Google sign-in couldn't load", "unreachable wording")
         check(p.locator('[data-role="gsign-retry"]').is_visible(), "retry offered")
         sign_in_form(p, "admin", E.s.password)
-        wait_view(p, "app")
+        wait_view(p, "landing")
     finally:
         set_google(E.s, "")
 
@@ -811,7 +863,7 @@ def google_refusals_are_explained(E):
         for status, code, text in wanted:
             p = E.page(gis=True)
             route_json(p, "**/api/v1/auth/google", status, code, "x")
-            p.goto(E.s.proj + "/#/login")
+            p.goto(E.s.plat + "/#/login")
             wait_panel(p, "login")
             p.wait_for_selector(".gsign-btn .fake-google")
             p.evaluate("window.__g.cb({credential: 'forged.credential.value'})")
@@ -820,7 +872,7 @@ def google_refusals_are_explained(E):
             eq(panel(p), "login", f"{code}: stays on the sign-in")
         # the real server: a forged credential is refused as invalid, never signs in
         p = E.page(gis=True)
-        p.goto(E.s.proj + "/#/login")
+        p.goto(E.s.plat + "/#/login")
         wait_panel(p, "login")
         p.wait_for_selector(".gsign-btn .fake-google")
         p.evaluate("window.__g.cb({credential: 'forged.credential.value'})")
@@ -839,27 +891,17 @@ def google_sign_in_resumes_the_target(E):
         def serve_session(page):
             tok = E.s.token()
             page.route("**/api/v1/auth/google", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({"token": tok, "expires_at": int(time.time()) + 3600})))
-        # the page that was asked for survives a Google sign-in
-        p = E.page(gis=True)
-        serve_session(p)
-        p.goto(E.s.proj + "/#/app/audit")
-        wait_panel(p, "login")
-        p.wait_for_selector(".gsign-btn .fake-google")
-        p.evaluate("window.__g.cb({credential: 'stand-in'})")
-        wait_view(p, "app")
-        eq(p.url, E.s.proj + "/#/app/audit", "Google sign-in resumes the requested page")
-        E.release(p)
         # a project waiting for the platform is continued after signing in to the platform with Google
         q = E.page(gis=True)
         serve_session(q)
-        q.goto(E.s.proj + "/")
+        q.goto(E.s.proj + "/#/app/audit")
         wait_panel(q, "login")
         q.click("#mb-sso")
         q.wait_for_url(re.compile(re.escape(E.s.plat) + r"/#/sso\?"))
         wait_panel(q, "login")
         q.wait_for_selector(".gsign-btn .fake-google")
         q.evaluate("window.__g.cb({credential: 'stand-in'})")
-        q.wait_for_url(re.compile(re.escape(E.s.proj) + r"/#/app/overview"), timeout=15000)
+        q.wait_for_url(re.compile(re.escape(E.s.proj) + r"/#/app/audit"), timeout=15000)
         wait_view(q, "app")
         st, me = E.s.call("GET", "/api/v1/me", token=token_of(q))
         eq((st, me.get("sso")), (200, True), "the project session came from the platform sign-in")
@@ -900,25 +942,13 @@ def project_console_and_platform_round_trip(E):
 def google_sign_out_withdraws_auto_select(E):
     set_google(E.s, "1234567890-abcdef.apps.googleusercontent.com")
     try:
-        p = E.page(gis=True)
-        p.goto(E.s.proj + "/#/login")
-        wait_panel(p, "login")
-        p.wait_for_selector(".gsign-btn .fake-google")
-        sign_in_form(p, "admin", E.s.password)
-        wait_view(p, "app")
-        p.goto(E.s.proj + "/#/app/settings")
-        p.wait_for_selector('[data-page="settings"]:not([hidden])')
-        eq(p.evaluate("window.__g.disable"), 0, "not before sign-out")
-        p.click('[data-page="settings"] [data-logout]')
-        wait_panel(p, "login")
-        check(p.evaluate("window.__g.disable") >= 1, "sign-out must call disableAutoSelect")
-        # the platform sign-out does the same
         q = E.page(gis=True)
         seed_session(q, E.s.plat, E.s.token())
         q.goto(E.s.plat + "/#/login")
         wait_view(q, "landing")
         q.goto(E.s.plat + "/#/login")  # signed in: goes home
         q.evaluate(GIS_STUB)
+        eq(q.evaluate("window.__g.disable"), 0, "not before sign-out")
         q.click("#acct .icon-btn")
         q.wait_for_selector('#acct a[href="#/login"]')
         check(q.evaluate("window.__g.disable") >= 1, "platform sign-out must call disableAutoSelect")
@@ -956,6 +986,30 @@ def settings_report_google_source_and_origins(E):
     q.goto(E.s.proj + "/#/app/settings")
     q.wait_for_selector('[data-page="settings"]:not([hidden])')
     check(q.locator("#gset-origins").is_hidden() or not q.locator("#set-google-client").is_visible(), "configuration is administrator-only")
+
+
+@case
+def project_without_platform_sign_in_keeps_its_own_form(E):
+    # MESH_PROJECT_SSO=false: the two origins stay apart, but the platform no longer signs people in to the
+    # project, so the project's own form is its sign-in again (this is also what a standalone install shows).
+    with tempfile.TemporaryDirectory() as tmp:
+        solo = Server(tmp, env={"MESH_PROJECT_SSO": "false"}).start()
+        try:
+            p = E.page()
+            p.goto(solo.proj + "/")
+            wait_panel(p, "login")
+            check(p.locator("#form-login").is_visible(), "own sign-in form")
+            check(p.locator("#mb-sso").is_hidden(), "no entrance to a platform that is not signing people in")
+            check(p.locator("[data-reg-link]").is_visible(), "own registration link")
+            sign_in_form(p, "admin", solo.password)
+            wait_view(p, "app")
+            eq(p.url, solo.proj + "/#/app/overview", "console after the project's own sign-in")
+            q = E.page()
+            q.goto(solo.proj + "/#/register")
+            wait_panel(q, "register")
+            eq(q.url, solo.proj + "/#/register", "registration stays on the project")
+        finally:
+            solo.stop()
 
 
 # ───────────────────────── languages, themes, titles ─────────────────────────

@@ -25,7 +25,9 @@
     loaded: false, kind: "project", split: false, platformURL: "", projectURL: "", baseURL: "", sso: false,
     get isPlatform() { return this.kind === "platform"; },
     get name() { return !this.loaded ? "" : this.isPlatform ? "MineAI" : "MeshBridge"; },
-    get info() { return { kind: this.kind, split: this.split, platformURL: this.platformURL, projectURL: this.projectURL }; },
+    get info() { return { kind: this.kind, split: this.split, platformURL: this.platformURL, projectURL: this.projectURL, sso: this.sso }; },
+    // One login: on the project origin the platform is the only way in, so the project shows no form of its own.
+    get oneLogin() { return this.kind === "project" && this.sso && !!this.platformURL; },
     // Headscale, agent downloads and tunnel URLs are routed on the platform
     // origin only, so the console must not derive them from its own.
     get serviceOrigin() { return this.baseURL || location.origin; },
@@ -239,18 +241,15 @@
     if (!host.hidden) Google.render(host);
   }
   let altSeq = 0;
-  // The "or continue with" block of the sign-in form: the platform account
-  // (project origin only) and Google. Hidden entirely when neither applies.
+  // The "or continue with" block of the sign-in form: Google, where this
+  // origin's own form is the login. (With one login the platform page owns it.)
   async function mountAltAuth() {
-    const seq = ++altSeq, box = $("#alt-auth"), sso = $("#mb-sso"), g = gsignBox();
+    const seq = ++altSeq, box = $("#alt-auth"), g = gsignBox();
     const st = await Status.get();
-    let ssoOn = false;
-    if (Surface.sso) { try { ssoOn = !!(await K.sso.status()).enabled; } catch { /* the password form still works */ } }
     if (seq !== altSeq || currentPanel !== "login") return;
     const cid = st && st.google_client_id ? String(st.google_client_id).trim() : "";
-    sso.hidden = !ssoOn;
     g.hidden = !cid;
-    box.hidden = !(ssoOn || cid);
+    box.hidden = !cid;
     clearGoogleError();
     if (!cid) { Google.leave(); return; }
     const host = $('[data-role="gsign-btn"]', g), unreachable = $('[data-role="gsign-load"]', g);
@@ -331,7 +330,12 @@
     for (const el of $$("[data-i18n-platform]")) el.dataset.i18n = Surface.isPlatform ? el.dataset.i18nPlatform : el.dataset.i18nProject;
     const back = Surface.split && !Surface.isPlatform && Surface.platformURL;
     for (const a of $$("[data-platform-home]")) { a.hidden = !back; if (back) a.href = Surface.platformURL + "/"; }
-    for (const a of $$("[data-project-link='mb']")) if (Surface.projectURL) a.href = Surface.projectURL + "/";
+    for (const a of $$("[data-project-link='mb']")) {
+      if (!Surface.projectURL) continue;
+      a.setAttribute("href", Surface.projectURL + "/");
+      const host = $(".card-host", a);
+      if (host) host.textContent = new URL(Surface.projectURL).host;
+    }
     // The footer of the sign-in pages: home on the platform, the platform from
     // the project, nothing on a standalone install.
     const foot = $("#auth-foot-link");
@@ -424,9 +428,13 @@
     project: { kicker: "art.kickerProject", title: "mb.art.title", p: ["mb.art.p1", "mb.art.p2", "mb.art.p3"] },
     setup: { kicker: "art.kickerProject", title: "setup.panelTitle", p: ["setup.panelP1", "setup.panelP2", "setup.panelP3"] },
   };
+  // The small network in the art panel: projects around the platform, devices around the control plane.
+  const ART_NODES = { platform: ["folder", "audit", "user", "terminal", "activity", "mesh", "box"], project: ["device"], setup: ["device"] };
   function setArt(kind) {
     const art = ART[kind];
     ["kicker", "title", "p1", "p2", "p3"].forEach((slot, i) => K.tl($(`[data-art="${slot}"]`), [art.kicker, art.title, ...art.p][i]));
+    const icons = ART_NODES[kind];
+    $$(".art-net .an-node .glyph").forEach((use, i) => use.setAttribute("href", "#i-" + icons[i % icons.length]));
   }
   async function showAuth(panel) {
     const st = await Status.get();
@@ -448,10 +456,23 @@
       if (flash && flash.panel === "login") { $('[data-role="notice-text"]', note).textContent = flash.text; note.hidden = false; flash = null; }
       else note.hidden = true;
       showErr($("#form-login"), "");
-      void mountAltAuth();
+      showErr($("#sso-entry"), "");
+      // One login: the project's page is a single way to the platform sign-in,
+      // the same as every other MineAI project; the form, registration,
+      // recovery and Google all live on the platform page.
+      const only = Surface.oneLogin;
+      $("#sso-entry").hidden = !only;
+      $("#form-login").hidden = only;
+      $("#alt-auth").hidden = true;
+      if (only) {
+        altSeq++; Google.leave();
+        $$("[data-reg-link]", sec).forEach((el) => (el.hidden = true));
+        $("#sso-create").setAttribute("href", Surface.platformURL + "/#/register");
+        $("#sso-create").target = "_blank"; $("#sso-create").rel = "noopener";
+      } else void mountAltAuth();
     }
     if (panel === "setup") setupGoto(setupStep);
-    const first = $("input:not([disabled])", sec);
+    const first = panel === "login" && Surface.oneLogin ? $("#mb-sso") : $("input:not([disabled])", sec);
     if (first && matchMedia("(min-width: 720px)").matches) first.focus({ preventScroll: true });
   }
 
@@ -1061,9 +1082,117 @@
     bar.firstChild.style.setProperty("--p", (ratio * 100).toFixed(1) + "%");
     const meta = h("div", { class: "prog-meta" },
       h("span", null, total ? t("app.transfers.progressOf", { done: fmt.bytes(done), total: fmt.bytes(total) }) : t("app.transfers.sizePending")),
-      h("span", null, total ? fmt.pct(ratio) : ""));
+      h("b", null, total ? fmt.pct(ratio) : ""));
     return h("div", { class: "prog" }, bar, meta);
   }
+  // ───────────────────────── overview visuals ─────────────────────────
+  // A stat tile's mini distribution bar: parts are [{k, n}], widths are shares.
+  function segments(box, parts) {
+    if (!box) return;
+    const total = parts.reduce((sum, p) => sum + p.n, 0);
+    const sig = JSON.stringify(parts);
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.replaceChildren(...(total ? parts.filter((p) => p.n > 0).map((p) => {
+      const part = h("i", { "data-k": p.k });
+      part.style.setProperty("--w", ((p.n / total) * 100).toFixed(2) + "%");
+      return part;
+    }) : []));
+  }
+
+  // The network at a glance: the control plane in the middle, every device on
+  // an orbit around it, and a moving line for each transfer in flight. Device
+  // positions depend only on the device list, so a node never jumps when its
+  // status changes. Everything the picture says is also in the lists below it.
+  const compactMap = window.matchMedia("(max-width: 720px)");
+  const FLOWING = new Set(["TRANSFERRING", "VERIFYING", "PAUSED"]);
+  const clip_ = (text, n) => (text.length > n ? text.slice(0, n - 1) + "…" : text);
+  function netMap() {
+    const host = $("#net-map"), devs = D.devices;
+    if (!devs) { host.replaceChildren(); return; }
+    const S = K.svg, compact = compactMap.matches;
+    const W = compact ? 360 : 1000, Ht = compact ? 400 : 380, cx = W / 2, cy = Ht / 2;
+    const rx = compact ? 118 : 372, ry = compact ? 132 : 122;
+    const rank = (d) => (d.online ? 0 : d.last_seen ? 2 : 1);
+    const max = compact ? 8 : 12;
+    const shown = devs.slice().sort((a, b) => rank(a) - rank(b) || a.hostname.localeCompare(b.hostname)).slice(0, max)
+      .sort((a, b) => a.hostname.localeCompare(b.hostname) || a.id.localeCompare(b.id));
+    const extra = devs.length - shown.length, slots = shown.length + (extra > 0 ? 1 : 0);
+    const spot = (i) => { const a = -Math.PI / 2 + (i / Math.max(slots, 1)) * Math.PI * 2; return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)]; };
+    const num = (v) => +v.toFixed(1);
+    const online = devs.filter((d) => d.online).length, active = (D.transfers || []).filter((x) => ACTIVE.has(x.state)).length;
+    const svg = S("svg", { viewBox: `0 0 ${W} ${Ht}`, role: "img", "aria-label": t("app.overview.mapLabel", { online: fmt.num(online), total: fmt.num(devs.length), active: fmt.num(active) }) });
+    svg.append(S("ellipse", { class: "m-orbit", cx, cy, rx, ry }), S("ellipse", { class: "m-orbit", cx, cy, rx: rx * 0.58, ry: ry * 0.58 }));
+    const pos = new Map();
+    shown.forEach((d, i) => pos.set(d.id, spot(i)));
+    for (const d of shown) if (d.online) { const [x, y] = pos.get(d.id); svg.append(S("line", { class: "m-link on", x1: cx, y1: cy, x2: num(x), y2: num(y) })); }
+    const tags = [];
+    for (const x of (D.transfers || []).filter((x) => FLOWING.has(x.state) && pos.has(x.src) && pos.has(x.dst) && x.src !== x.dst).slice(0, 6)) {
+      const [sx, sy] = pos.get(x.src), [dx, dy] = pos.get(x.dst);
+      const qx = cx + ((sx + dx) / 2 - cx) * 0.3, qy = cy + ((sy + dy) / 2 - cy) * 0.3;
+      const kind = x.state === "PAUSED" ? " pause" : x.route === "PEER_RELAY" ? " relay" : x.route === "OBJECT_STORAGE" ? " store" : "";
+      svg.append(S("path", { class: "m-flow" + kind, d: `M${num(sx)} ${num(sy)}Q${num(qx)} ${num(qy)} ${num(dx)} ${num(dy)}` }));
+      if (x.bytes_total) {
+        const g = S("g", { class: "m-tag", transform: `translate(${num(0.25 * sx + 0.5 * qx + 0.25 * dx)} ${num(0.25 * sy + 0.5 * qy + 0.25 * dy)})` });
+        const label = S("text", { y: 4 }); label.textContent = fmt.pct(Math.min(1, x.bytes_done / x.bytes_total));
+        g.append(S("rect", { x: -20, y: -10, width: 40, height: 20, rx: 10 }), label); tags.push(g);
+      }
+    }
+    svg.append(...tags);
+    const hub = S("g", { class: "m-hub", transform: `translate(${cx} ${cy})` });
+    hub.append(S("circle", { class: "ring r2", r: 94 }), S("circle", { class: "ring", r: 64 }), S("use", { class: "hub-mark", href: "#i-mark", x: -31, y: -31, width: 62, height: 62 }));
+    svg.append(hub);
+    shown.forEach((d) => {
+      const [x, y] = pos.get(d.id), st = deviceState(d), above = y < cy - 4;
+      // The picture is one image for assistive technology (its label carries the counts); the nodes are a pointer shortcut, not tab stops.
+      const a = S("a", { class: "m-node " + (st === "online" ? "on" : st === "pending" ? "pend" : "off"), href: "#/app/devices", tabindex: "-1", transform: `translate(${num(x)} ${num(y)})`, "aria-label": d.hostname + " · " + t("status." + st) });
+      const tip = S("title"); tip.textContent = [d.hostname, d.tailscale_ip, t("status." + st)].filter(Boolean).join(" · ");
+      const name = S("text", { class: "m-label", y: above ? -37 : 45 }); name.textContent = clip_(d.hostname, compact ? 11 : 18);
+      a.append(tip, S("circle", { class: "pulse", r: 25 }), S("circle", { class: "disc", r: 25 }), S("use", { class: "glyph", href: "#i-device", x: -10, y: -10, width: 20, height: 20 }), name);
+      if (!compact && d.tailscale_ip) { const ip = S("text", { class: "m-sub", y: above ? -52 : 60 }); ip.textContent = d.tailscale_ip; a.append(ip); }
+      svg.append(a);
+    });
+    if (extra > 0) {
+      const [x, y] = spot(shown.length), more = S("g", { class: "m-more", transform: `translate(${num(x)} ${num(y)})` }), label = S("text", { y: 5 });
+      label.textContent = "+" + fmt.num(extra);
+      more.append(S("circle", { class: "disc", r: 22 }), label); svg.append(more);
+    }
+    if (!devs.length) {
+      for (let i = 0; i < 5; i++) { const [x, y] = [cx + rx * Math.cos(-Math.PI / 2 + (i / 5) * Math.PI * 2), cy + ry * Math.sin(-Math.PI / 2 + (i / 5) * Math.PI * 2)]; svg.append(S("circle", { class: "m-ghost", cx: num(x), cy: num(y), r: 22 })); }
+    }
+    host.replaceChildren(...[svg, devs.length ? null : h("div", { class: "map-empty" }, h("p", null, t("app.devices.emptyTitle")),
+      isAdmin() ? h("button", { class: "btn btn-primary btn-sm", type: "button", "data-open": "enroll" }, icon("plus"), t("app.devices.add")) : null)].filter(Boolean));
+  }
+  compactMap.addEventListener("change", () => { if (currentView === "app" && App.page === "overview") PAGES.overview.render(); });
+
+  // ── small presentation helpers for the console lists ──
+  function routeTag(route) {
+    const kind = { DIRECT: "direct", PEER_RELAY: "relay", OBJECT_STORAGE: "store", DERP_SMALL: "derp", REFUSED_DERP_LARGE: "bad", WAITING_FOR_ROUTE: "wait" }[route] || "none";
+    return h("span", { class: "rtag rt-" + kind }, icon("route"), routeLabel(route));
+  }
+  function gaugeSvg(ratio) {
+    const S = K.svg, r = 32, c = 2 * Math.PI * r;
+    const el = S("svg", { viewBox: "0 0 80 80", "aria-hidden": "true" });
+    el.append(S("circle", { class: "trk", cx: 40, cy: 40, r }), S("circle", { class: "arc", cx: 40, cy: 40, r, "stroke-dasharray": (ratio * c).toFixed(1) + " " + c.toFixed(1) }));
+    return el;
+  }
+  function regionName(code) {
+    const c = String(code || "").toUpperCase(), two = /^[A-Z]{2}$/.test(c) ? c : c.startsWith("US") ? "US" : "";
+    try { if (two) return new Intl.DisplayNames([I18N.lang], { type: "region" }).of(two) || ""; } catch { /* unknown region code */ }
+    return "";
+  }
+  function dayLabel(ts) {
+    const d = new Date(ts * 1000), start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((start(new Date()) - start(d)) / 86400000);
+    try {
+      if (diff === 0 || diff === 1) { const s = new Intl.RelativeTimeFormat(I18N.lang, { numeric: "auto" }).format(-diff, "day"); return s.charAt(0).toUpperCase() + s.slice(1); }
+      return new Intl.DateTimeFormat(I18N.lang, { month: "long", day: "numeric", weekday: "short" }).format(d);
+    } catch { return d.toDateString(); }
+  }
+  function timeOfDay(ts) {
+    try { return new Intl.DateTimeFormat(I18N.lang, { hour: "2-digit", minute: "2-digit" }).format(new Date(ts * 1000)); } catch { return fmt.rel(ts); }
+  }
+
   // ───────────────────────── console pages ─────────────────────────
   const App = { page: null, me: null, filters: { dev: "all", tr: "all" } };
   const isAdmin = () => App.me && App.me.role === "admin";
@@ -1112,21 +1241,29 @@
       render() {
         const devs = D.devices || [], trs = D.transfers || [], rel = D.relays || [];
         const online = devs.filter((d) => d.online).length;
-        const stat = (id, value, small, note, cls) => {
+        const stat = (id, value, small, note, cls, parts) => {
           const el = $("#" + id);
           el.classList.remove("ok", "bad");
           if (cls) el.classList.add(cls);
           const v = $('[data-role="v"]', el);
           v.replaceChildren(value, small ? h("small", null, " / " + small) : "");
           $('[data-role="n"]', el).textContent = note;
+          segments($('[data-role="seg"]', el), parts || []);
         };
-        if (D.devices) stat("st-devices", fmt.num(online), devs.length ? fmt.num(devs.length) : "", devs.length ? t("app.overview.devicesNote", { n: devs.length, count: fmt.num(devs.length) }) : t("app.overview.noDevices"));
+        if (D.devices) {
+          const parts = [{ k: "ok", n: online }, { k: "off", n: devs.filter((d) => d.last_seen && !d.online).length }, { k: "pend", n: devs.filter((d) => !d.last_seen).length }];
+          stat("st-devices", fmt.num(online), devs.length ? fmt.num(devs.length) : "", devs.length ? t("app.overview.devicesNote", { n: devs.length, count: fmt.num(devs.length) }) : t("app.overview.noDevices"), null, parts);
+        }
         else stat("st-devices", "—", "", dataErrors.devices || t("common.loading"));
-        if (D.transfers) { const act = trs.filter((x) => ACTIVE.has(x.state)).length; stat("st-transfers", fmt.num(act), "", t("app.overview.transfersNote", { n: trs.length, count: fmt.num(trs.length) })); }
+        if (D.transfers) {
+          const act = trs.filter((x) => ACTIVE.has(x.state)).length, done = trs.filter((x) => x.state === "COMPLETED").length;
+          const bad = trs.filter((x) => x.state === "FAILED" || x.state === "CANCELLED").length;
+          stat("st-transfers", fmt.num(act), "", t("app.overview.transfersNote", { n: trs.length, count: fmt.num(trs.length) }), null, [{ k: "live", n: act }, { k: "done", n: done }, { k: "bad", n: bad }]);
+        }
         else stat("st-transfers", "—", "", dataErrors.transfers || t("common.loading"));
         if (D.relays) {
           const ok = rel.filter((r) => r.healthy).length;
-          if (rel.length) stat("st-relays", fmt.num(ok), fmt.num(rel.length), t("app.overview.relaysNote"));
+          if (rel.length) stat("st-relays", fmt.num(ok), fmt.num(rel.length), t("app.overview.relaysNote"), null, [{ k: "ok", n: ok }, { k: "bad", n: rel.length - ok }]);
           else stat("st-relays", "—", "", t("app.overview.relaysNone"));
         }
         else stat("st-relays", "—", "", dataErrors.relays || t("common.loading"));
@@ -1136,6 +1273,8 @@
           stat("st-control", t(ok ? "app.overview.controlOk" : "app.overview.controlBad"), "", t(ok ? "app.health.hsOk" : "app.health.hsDown"), ok ? "ok" : "bad");
         }
         else stat("st-control", "—", "", t("app.health.checking"));
+        // network map
+        if (shouldPaint("ov-map", [dataVersions.devices, dataVersions.transfers, compactMap.matches, App.me && App.me.role])) netMap();
         // recent transfers
         if (shouldPaint("ov-transfers", [dataVersions.transfers, dataVersions.devices, dataErrors.transfers])) {
         const tl = $("#ov-transfers");
@@ -1143,12 +1282,15 @@
         if (!trs.length) tl.append(h("li", { class: "list-empty" }, D.transfers ? t("app.overview.noTransfers") : dataErrors.transfers || t("common.loading")));
         for (const x of trs.slice(0, 5)) {
           const ratio = x.bytes_total ? Math.min(1, x.bytes_done / x.bytes_total) : x.state === "COMPLETED" ? 1 : 0;
-          const tone = x.state === "FAILED" ? "clay" : x.state === "COMPLETED" ? "moss" : "slate";
-          tl.append(h("li", null,
-            h("span", { class: "feed-dot " + tone }, icon("transfer")),
-            h("div", { class: "li-main" }, h("div", { class: "li-title" }, hostOf(x.src) + "  →  " + hostOf(x.dst)),
-              h("div", { class: "li-sub" }, t("state." + x.state) + " · " + routeLabel(x.route))),
-            h("span", { class: "li-end" }, x.bytes_total ? fmt.pct(ratio) : "")));
+          const tone = x.state === "FAILED" || x.state === "CANCELLED" ? "clay" : x.state === "COMPLETED" ? "moss" : "slate";
+          const main = h("div", { class: "li-main" }, h("div", { class: "li-title" }, hostOf(x.src) + "  →  " + hostOf(x.dst)),
+            h("div", { class: "li-sub" }, t("state." + x.state) + " · " + routeLabel(x.route)));
+          if (ACTIVE.has(x.state) && x.bytes_total) {
+            const bar = h("div", { class: "progress" + (x.state === "TRANSFERRING" ? " live" : x.state === "PAUSED" ? " warn" : "") }, h("i"));
+            bar.firstChild.style.setProperty("--p", (ratio * 100).toFixed(1) + "%");
+            main.append(bar);
+          }
+          tl.append(h("li", null, h("span", { class: "feed-dot " + tone }, icon("transfer")), main, h("span", { class: "li-pct" }, x.bytes_total ? fmt.pct(ratio) : "")));
         }
         }
         // activity
@@ -1196,13 +1338,19 @@
         const rows = all.filter((d) => (f === "all" || deviceState(d) === f) && (!q || [d.hostname, d.tailscale_ip, d.id].some((v) => String(v || "").toLowerCase().includes(q))));
         if (!rows.length) { host.replaceChildren(h("div", { class: "empty" }, h("p", { class: "empty-text" }, t("common.noMatch")))); return; }
         host.replaceChildren(table(
-          [{ label: t("app.devices.colDevice") }, { label: t("app.devices.colIp") }, { label: t("app.devices.colStatus") }, { label: t("app.devices.colSeen") }],
-          rows.map((d) => [
-            [h("div", { class: "primary" }, d.hostname), h("div", { class: "sub" }, h("span", { class: "mono" }, d.id), inlineCopy(d.id, "app.devices.copyId"))],
-            d.tailscale_ip ? h("span", { class: "mono" }, d.tailscale_ip) : h("span", { class: "faint" }, "—"),
-            devicePill(d),
-            h("span", { title: fmt.abs(d.last_seen), class: d.last_seen ? null : "faint" }, fmt.rel(d.last_seen)),
-          ])));
+          [{ label: t("app.devices.colDevice") }, { label: t("app.devices.colStatus") }, { label: t("app.devices.colIp") }, { label: t("app.devices.colSeen") }],
+          rows.map((d) => {
+            const st = deviceState(d);
+            return [
+              h("div", { class: "ent" },
+                h("span", { class: "ent-ic" + (st === "online" ? "" : st === "pending" ? " pend" : " off") }, icon("device")),
+                h("div", { class: "ent-t" }, h("div", { class: "primary", title: d.hostname }, d.hostname),
+                  h("div", { class: "sub" }, h("span", { class: "mono" }, d.id), inlineCopy(d.id, "app.devices.copyId")))),
+              devicePill(d),
+              d.tailscale_ip ? h("span", { class: "ip" }, h("span", { class: "mono" }, d.tailscale_ip), inlineCopy(d.tailscale_ip, "common.copy")) : h("span", { class: "faint" }, "—"),
+              h("span", { title: fmt.abs(d.last_seen), class: "when" + (d.last_seen ? "" : " faint") }, fmt.rel(d.last_seen)),
+            ];
+          })));
       },
     },
 
@@ -1226,12 +1374,19 @@
         if (!rows.length) { host.replaceChildren(h("div", { class: "empty" }, h("p", { class: "empty-text" }, t("common.noMatch")))); return; }
         host.replaceChildren(table(
           [{ label: t("app.transfers.colJob") }, { label: t("app.transfers.colRoute") }, { label: t("app.transfers.colState") }, { label: t("app.transfers.colProgress") }],
-          rows.map((x) => [
-            [h("div", { class: "primary route" }, hostOf(x.src), h("span", { class: "arrow" }, "→"), hostOf(x.dst)), h("div", { class: "sub" }, h("span", { class: "mono" }, x.id), inlineCopy(x.id, "app.transfers.copyId"))],
-            h("span", { class: "tag-mono" }, routeLabel(x.route)),
-            [statePill(x.state), x.error ? h("div", { class: "err-text", title: x.error }, x.error) : null],
-            progress(x),
-          ])));
+          rows.map((x) => {
+            const tone = x.state === "FAILED" ? " err" : x.state === "CANCELLED" ? " off" : x.state === "PAUSED" || x.state === "WAITING_FOR_ROUTE" ? " warn" : x.state === "COMPLETED" ? "" : x.state === "QUEUED" || x.state === "PROBING" ? " pend" : "";
+            return [
+              h("div", { class: "ent" },
+                h("span", { class: "ent-ic" + tone }, icon("transfer")),
+                h("div", { class: "ent-t" },
+                  h("div", { class: "hop" }, h("span", { title: hostOf(x.src) }, hostOf(x.src)), icon("arrow", "arrow"), h("span", { title: hostOf(x.dst) }, hostOf(x.dst))),
+                  h("div", { class: "sub" }, h("span", { class: "mono" }, x.id), inlineCopy(x.id, "app.transfers.copyId")))),
+              routeTag(x.route),
+              [statePill(x.state), x.error ? h("div", { class: "err-text", title: x.error }, x.error) : null],
+              progress(x),
+            ];
+          })));
       },
     },
 
@@ -1268,21 +1423,23 @@
             const bar = h("div", { class: "progress" + (ratio > 0.95 ? " err" : ratio > 0.8 ? " warn" : "") }, h("i"));
             bar.firstChild.style.setProperty("--p", (ratio * 100).toFixed(1) + "%");
             const url = Surface.serviceOrigin + x.url_path;
-            const toggle = h("button", { class: "btn btn-outline btn-xs", type: "button" }, t(x.status === "disabled" ? "app.tunnels.actionEnable" : "app.tunnels.actionDisable"));
+            const name = x.name || t("app.tunnels.unnamed");
+            const on = x.status !== "disabled";
+            const toggle = h("button", { class: "switch", type: "button", role: "switch", "aria-checked": String(on), "aria-label": name + " — " + t(on ? "app.tunnels.actionDisable" : "app.tunnels.actionEnable"), title: t(on ? "app.tunnels.actionDisable" : "app.tunnels.actionEnable") });
             toggle.addEventListener("click", () => busy(toggle, async () => {
               try {
                 await api("PATCH", "/api/v1/tunnels/" + x.id, { status: x.status === "disabled" ? "active" : "disabled" });
                 toast(t("app.tunnels.updated")); await load.tunnels(); this.render();
               } catch (err) { toast(errText(err), "err"); }
             }));
-            const rotate = h("button", { class: "btn btn-outline btn-xs", type: "button" }, t("app.tunnels.actionRotate"));
+            const rotate = h("button", { class: "icon-btn sm", type: "button", "aria-label": t("app.tunnels.actionRotate"), title: t("app.tunnels.actionRotate") }, icon("key"));
             rotate.addEventListener("click", () => busy(rotate, async () => {
               try {
                 const d = await api("POST", `/api/v1/tunnels/${x.id}/rotate-key`);
                 D.pendingKey = { key: d.access_key }; await load.tunnels(); this.render();
               } catch (err) { toast(errText(err), "err"); }
             }));
-            const del = h("button", { class: "btn btn-quiet btn-xs", type: "button" }, t("app.tunnels.actionDelete"));
+            const del = h("button", { class: "icon-btn sm danger", type: "button", "aria-label": t("app.tunnels.actionDelete"), title: t("app.tunnels.actionDelete") }, icon("trash"));
             del.addEventListener("click", () => {
               if (!window.confirm(t("app.tunnels.deleteConfirm", { name: x.name || x.slug.slice(0, 8) }))) return;
               busy(del, async () => {
@@ -1292,12 +1449,18 @@
                 } catch (err) { toast(errText(err), "err"); }
               });
             });
+            const sub = x.url_subdomain ? Surface.tunnelHost(x.url_subdomain) : "";
+            const tone = x.status === "quota_exceeded" ? " warn" : x.status === "disabled" ? " off" : x.online ? "" : " pend";
             return [
-              [h("div", { class: "primary" }, x.name || t("app.tunnels.unnamed")), h("div", { class: "sub" }, h("span", { class: "tag-mono" }, x.device_hostname || short(x.device_id)), " · ", h("span", { class: "mono" }, x.target))],
-              [h("a", { class: "mono link", href: url, target: "_blank", rel: "noopener" }, x.url_path), inlineCopy(url, "app.tunnels.copyUrl"),
-                x.url_subdomain ? h("div", { class: "sub" }, h("a", { class: "mono link", href: Surface.tunnelHost(x.url_subdomain), target: "_blank", rel: "noopener" }, Surface.tunnelHost(x.url_subdomain))) : null],
-              [tunnelPill(x), x.key_required ? h("div", { class: "sub" }, icon("key"), " ", t("app.tunnels.keyOn")) : h("div", { class: "sub" }, t("app.tunnels.keyOff"))],
-              h("div", { class: "prog" }, bar, h("div", { class: "prog-meta" }, h("span", null, t("app.tunnels.usageOf", { used: fmt.bytes(x.bytes_in_month), quota: fmt.bytes(x.monthly_quota_bytes) })))),
+              h("div", { class: "ent" },
+                h("span", { class: "ent-ic" + tone }, icon("globe")),
+                h("div", { class: "ent-t" }, h("div", { class: "primary", title: name }, name),
+                  h("div", { class: "sub" }, h("span", { class: "tag-mono" }, x.device_hostname || short(x.device_id)), h("span", { class: "mono", title: x.target }, x.target)))),
+              h("div", { class: "urls" },
+                h("div", { class: "url" }, h("a", { class: "mono link", href: url, target: "_blank", rel: "noopener", title: url }, x.url_path), inlineCopy(url, "app.tunnels.copyUrl")),
+                sub ? h("div", { class: "url" }, h("a", { class: "mono link", href: sub, target: "_blank", rel: "noopener", title: sub }, sub.replace(/^https?:\/\//, "")), inlineCopy(sub, "app.tunnels.copyUrl")) : null),
+              [tunnelPill(x), h("div", { class: "keyflag" }, x.key_required ? [icon("key"), t("app.tunnels.keyOn")] : t("app.tunnels.keyOff"))],
+              h("div", { class: "prog" }, bar, h("div", { class: "prog-meta" }, h("span", null, t("app.tunnels.usageOf", { used: fmt.bytes(x.bytes_in_month), quota: fmt.bytes(x.monthly_quota_bytes) })), h("b", null, fmt.pct(ratio)))),
               h("div", { class: "row-actions" }, toggle, rotate, del),
             ];
           })));
@@ -1315,14 +1478,19 @@
         }
         host.replaceChildren(h("div", { class: "relay-grid" }, rel.map((r) => {
           const ratio = r.quota ? Math.min(1, r.bytes_out_month / r.quota) : 0;
-          const bar = h("div", { class: "progress" + (ratio > 0.95 ? " err" : ratio > 0.8 ? " warn" : "") }, h("i"));
-          bar.firstChild.style.setProperty("--p", (ratio * 100).toFixed(1) + "%");
+          const kind = !r.quota ? "none" : ratio > 0.95 ? "err" : ratio > 0.8 ? "warn" : "";
+          const place = regionName(r.region);
           return h("div", { class: "panel relay" },
-            h("div", { class: "relay-top" }, h("h3", { class: "display relay-name" }, r.name), h("span", { class: "pill " + (r.healthy ? "ok live" : "err") }, h("span", { class: "dot" }), t(r.healthy ? "app.relays.healthy" : "app.relays.unhealthy"))),
-            h("div", { class: "relay-meta" }, h("span", { class: "tag-mono" }, r.region || "—"), h("span", null, t("app.relays.port", { port: r.udp_port })), h("span", { title: fmt.abs(r.last_seen) }, t("app.relays.seen", { time: fmt.rel(r.last_seen) }))),
-            h("div", { class: "relay-quota" },
-              h("div", { class: "prog-meta" }, h("span", null, t("app.relays.month")), h("span", null, r.quota ? t("app.relays.quota", { used: fmt.bytes(r.bytes_out_month), quota: fmt.bytes(r.quota) }) : t("app.relays.noQuota", { used: fmt.bytes(r.bytes_out_month) }))),
-              r.quota ? bar : null));
+            h("div", { class: "relay-top" },
+              h("div", null, h("h3", { class: "display relay-name" }, r.name),
+                h("div", { class: "relay-loc" }, h("span", { class: "tag-mono" }, r.region || "—"), place ? h("span", null, place) : null)),
+              h("span", { class: "pill " + (r.healthy ? "ok live" : "err") }, h("span", { class: "dot" }), t(r.healthy ? "app.relays.healthy" : "app.relays.unhealthy"))),
+            h("div", { class: "relay-body" },
+              h("div", { class: "gauge " + kind }, gaugeSvg(ratio), h("b", null, r.quota ? [fmt.num(Math.round(ratio * 100)), h("small", null, "%")] : "∞")),
+              h("div", { class: "relay-use" }, h("div", { class: "k" }, t("app.relays.month")),
+                h("div", { class: "v" }, fmt.bytes(r.bytes_out_month), r.quota ? h("small", null, " / " + fmt.bytes(r.quota)) : null),
+                !r.quota ? h("div", { class: "k" }, t("app.relays.unlimited")) : null)),
+            h("div", { class: "relay-foot" }, h("span", null, t("app.relays.port", { port: r.udp_port })), h("span", { title: fmt.abs(r.last_seen) }, t("app.relays.seen", { time: fmt.rel(r.last_seen) }))));
         })));
       },
     },
@@ -1340,18 +1508,22 @@
         const q = $("#audit-q").value.trim().toLowerCase();
         const rows = D.audit.filter((a) => !q || [a.actor, a.event, eventInfo(a.event).label, a.detail, a.device_id, a.job_id].some((v) => String(v || "").toLowerCase().includes(q)));
         if (!rows.length) { host.replaceChildren(h("div", { class: "empty" }, h("p", { class: "empty-text" }, t("common.noMatch")))); return; }
-        host.replaceChildren(table(
-          [{ label: t("app.audit.colEvent") }, { label: t("app.audit.colActor") }, { label: t("app.audit.colDetail") }, { label: t("app.audit.colTime") }],
-          rows.map((a) => {
-            const ev = eventInfo(a.event);
-            const ids = [a.device_id && h("span", { class: "tag-mono", title: a.device_id }, "dev " + short(a.device_id)), a.job_id && h("span", { class: "tag-mono", title: a.job_id }, "job " + short(a.job_id))].filter(Boolean);
-            return [
-              h("div", { class: "primary", title: a.event }, ev.label),
-              h("span", null, a.actor || "—"),
-              h("div", { class: "sub" }, eventDetail(a) || (ids.length ? null : "—"), ...ids),
-              h("span", { class: "nowrap", title: fmt.abs(a.ts) }, fmt.rel(a.ts)),
-            ];
-          })));
+        const items = [];
+        let day = "";
+        for (const a of rows) {
+          const label = dayLabel(a.ts);
+          if (label !== day) { day = label; items.push(h("div", { class: "tl-day", role: "heading", "aria-level": "3" }, label)); }
+          const ev = eventInfo(a.event);
+          const ids = [a.device_id && h("span", { class: "tag-mono", title: a.device_id }, "dev " + short(a.device_id)), a.job_id && h("span", { class: "tag-mono", title: a.job_id }, "job " + short(a.job_id))].filter(Boolean);
+          const detail = eventDetail(a);
+          items.push(h("div", { class: "tl-item" },
+            h("span", { class: "tl-ic " + ev.tone }, icon(ev.icon)),
+            h("div", { class: "tl-main" },
+              h("div", null, h("b", { title: a.event }, ev.label), a.actor ? h("span", { class: "who" }, a.actor) : null),
+              detail || ids.length ? h("div", { class: "what" }, detail, ...ids) : null),
+            h("span", { class: "tl-time", title: fmt.abs(a.ts) }, timeOfDay(a.ts))));
+        }
+        host.replaceChildren(h("div", { class: "timeline" }, items));
       },
     },
 
@@ -1584,6 +1756,21 @@
     });
     seg("dev-filter", "dev", "devices");
     seg("tr-filter", "tr", "transfers");
+    // Settings sections: the side list scrolls to a card and follows the reader.
+    const setNav = $("#set-nav"), setSections = $$("[id^=\"sec-\"]", $(".settings"));
+    setNav.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-target]");
+      if (b) $("#" + b.dataset.target).scrollIntoView({ behavior: reduceMotion.matches ? "auto" : "smooth", block: "start" });
+    });
+    if ("IntersectionObserver" in window) {
+      const seen = new Set();
+      const mark = () => {
+        const top = setSections.find((el) => seen.has(el) && !el.hidden);
+        for (const b of $$("button[data-target]", setNav)) b.setAttribute("aria-current", String(!!top && b.dataset.target === top.id));
+      };
+      const io = new IntersectionObserver((entries) => { for (const en of entries) (en.isIntersecting ? seen.add(en.target) : seen.delete(en.target)); mark(); }, { rootMargin: "-120px 0px -55% 0px" });
+      setSections.forEach((el) => io.observe(el));
+    }
     $("#set-lang").addEventListener("change", (e) => I18N.use(e.target.value, true));
     $("#set-theme").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) Theme.set(b.dataset.v); });
     on("theme", () => { if (App.page === "settings") PAGES.settings.render(); });
@@ -1951,9 +2138,9 @@
       catch (err) { showErr($('[data-panel="callback"]'), errText(err)); }
     }));
     $("#mb-sso").addEventListener("click", (e) => busy(e.currentTarget, async () => {
-      showErr($("#form-login"), "");
+      showErr($("#sso-entry"), "");
       try { await K.sso.start(Rules.safeResume(Resume.get()) || "#/app/overview"); }
-      catch (err) { showErr($("#form-login"), errText(err)); }
+      catch (err) { showErr($("#sso-entry"), errText(err)); }
     }));
     $('[data-role="gsign-retry"]', gsignBox()).addEventListener("click", () => { if (currentPanel === "login") void mountAltAuth(); });
     $("#service-retry").addEventListener("click", (e) => busy(e.currentTarget, async () => {

@@ -302,7 +302,9 @@
       "activityTitle": "Activité",
       "viewAll": "Tout voir",
       "noTransfers": "Aucun transfert pour l'instant.",
-      "noActivity": "Il ne s'est encore rien passé."
+      "noActivity": "Il ne s'est encore rien passé.",
+      "mapTitle": "Réseau",
+      "mapLabel": "Carte du réseau. Appareils en ligne : {online} sur {total}. Transferts en cours : {active}."
     },
     "start": {
       "title": "Pour démarrer",
@@ -384,7 +386,8 @@
       "quota": "{used} sur {quota}",
       "noQuota": "{used} · sans quota",
       "emptyTitle": "Aucun nœud relais",
-      "emptyText": "Les relais sont facultatifs. Si deux régions ne peuvent se connecter directement, déployez un Peer Relay sur un serveur bien doté en bande passante."
+      "emptyText": "Les relais sont facultatifs. Si deux régions ne peuvent se connecter directement, déployez un Peer Relay sur un serveur bien doté en bande passante.",
+      "unlimited": "Sans quota"
     },
     "audit": {
       "title": "Journal d'audit",
@@ -539,12 +542,11 @@
     "consoleNav": "Console MeshBridge",
     "signOutPlatform": "Se déconnecter aussi de MineAI",
     "sso": {
-      "button": "Continuer avec MineAI",
       "title": "Connexion en cours",
       "working": "Finalisation de votre connexion MineAI…",
-      "failed": "La connexion MineAI n'a pas pu aboutir. Réessayez ou utilisez une autre méthode.",
+      "failed": "La connexion MineAI n'a pas pu aboutir. Réessayez.",
       "retry": "Réessayer",
-      "useLogin": "Utiliser une autre méthode"
+      "useLogin": "Retour à la connexion"
     }
   },
   "service": {

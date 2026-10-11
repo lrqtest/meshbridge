@@ -298,7 +298,9 @@
       "activityTitle": "アクティビティ",
       "viewAll": "すべて表示",
       "noTransfers": "転送はまだありません。",
-      "noActivity": "まだ何もありません。"
+      "noActivity": "まだ何もありません。",
+      "mapTitle": "ネットワーク",
+      "mapLabel": "ネットワークマップ。オンラインのデバイス {online} / {total}、進行中の転送 {active}。"
     },
     "start": {
       "title": "はじめに",
@@ -380,7 +382,8 @@
       "quota": "{used} / {quota}",
       "noQuota": "{used} · 容量制限なし",
       "emptyTitle": "中継ノードがありません",
-      "emptyText": "中継は任意です。2 つの地域が直接つながらない場合は、帯域の大きいサーバーに Peer Relay を展開してください。"
+      "emptyText": "中継は任意です。2 つの地域が直接つながらない場合は、帯域の大きいサーバーに Peer Relay を展開してください。",
+      "unlimited": "上限なし"
     },
     "audit": {
       "title": "監査ログ",
@@ -482,7 +485,7 @@
   "portal": {
     "pageTitle": "MineAI — あなたのプロジェクト",
     "eyebrow": "MineAI プラットフォーム",
-    "title": "すべてのプロジェクトに、居場所を。",
+    "title": "すべてのプロジェクトに、\n居場所を。",
     "lede": "読む、書く、作る、探る。プロジェクトはそれぞれ独立した場所で、ひとつの MineAI アカウントですべてを開けます。",
     "projects": "プロジェクト",
     "open": "プロジェクトを開く",
@@ -535,12 +538,11 @@
     "consoleNav": "MeshBridge コンソール",
     "signOutPlatform": "MineAI からもサインアウト",
     "sso": {
-      "button": "MineAI で続行",
       "title": "サインインしています",
       "working": "MineAI のサインインを完了しています…",
-      "failed": "MineAI のサインインを完了できませんでした。もう一度試すか、別の方法でサインインしてください。",
+      "failed": "MineAI のサインインを完了できませんでした。もう一度お試しください。",
       "retry": "もう一度試す",
-      "useLogin": "別の方法でサインイン"
+      "useLogin": "サインインに戻る"
     }
   },
   "service": {
