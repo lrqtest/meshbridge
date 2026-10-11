@@ -17,7 +17,11 @@ func Open(path, schemaFile string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	sqlDB, err := sql.Open("sqlite", path+"?cache=shared")
+	// PRAGMAs are per connection. Passing them in the DSN applies them to every
+	// connection the pool ever opens, so a replaced connection cannot silently
+	// lose foreign-key enforcement (which session revocation cascades rely on)
+	// or the busy timeout. journal_mode=WAL persists in the file itself.
+	sqlDB, err := sql.Open("sqlite", path+"?cache=shared&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)")
 	if err != nil {
 		return nil, err
 	}
